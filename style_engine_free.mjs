@@ -177,9 +177,8 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       const arrayBuffer = await fetchResponse.arrayBuffer();
       return Buffer.from(arrayBuffer);
     } catch (err) {
-      console.error(`Fal.ai styling failed for [${style}]. Falling back to matching local filter.`, err.message);
-      const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
-      return await applyLocalFilter(imageBuffer, fallbackFilter);
+      console.error(`Fal.ai styling failed for [${style}].`, err.message);
+      throw err;
     }
   }
 
