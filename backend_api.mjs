@@ -61,7 +61,6 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     const imageId = uuidv4();
 
     if (!req.file) return res.status(400).json({ error: "No photo uploaded" });
-    if (!frameId)  return res.status(400).json({ error: "frameId is required" });
 
     const resizedBuffer = await sharp(req.file.buffer)
       .resize(1024, 600, { fit: "cover", position: "entropy" })
@@ -71,7 +70,7 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     const origUrl = await uploadToCloudinary(resizedBuffer, `auraframe/users/${userId}/originals`, imageId);
 
     const imageDoc = {
-      id: imageId, userId, frameId, style,
+      id: imageId, userId, frameId: frameId || null, style,
       status: style === "original" ? "ready" : "processing",
       origUrl, styledUrl: style === "original" ? origUrl : null,
       caption: caption || null,
@@ -80,9 +79,11 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     await db.collection("images").doc(imageId).set(imageDoc);
 
     if (style === "original") {
-      await addToFrameQueue(frameId, imageId, origUrl, caption);
+      if (frameId) {
+        await addToFrameQueue(frameId, imageId, origUrl, caption);
+      }
     } else {
-      processStyleAsync(imageId, userId, frameId, resizedBuffer, style, caption)
+      processStyleAsync(imageId, userId, frameId || null, resizedBuffer, style, caption)
         .catch(err => console.error(`[${imageId}] Style error:`, err));
     }
 
@@ -100,7 +101,9 @@ async function processStyleAsync(imageId, userId, frameId, imageBuffer, style, c
     const styledBuffer = await applyStyle(imageBuffer, style);
     const styledUrl = await uploadToCloudinary(styledBuffer, `auraframe/users/${userId}/styled`, `${imageId}_${style}`);
     await db.collection("images").doc(imageId).update({ styledUrl, status: "ready" });
-    await addToFrameQueue(frameId, imageId, styledUrl, caption);
+    if (frameId) {
+      await addToFrameQueue(frameId, imageId, styledUrl, caption);
+    }
     console.log(`[${imageId}] Done`);
   } catch (err) {
     console.error(`[${imageId}] Failed:`, err);
