@@ -97,8 +97,21 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
 
     const origUrl = await uploadToCloudinary(resizedBuffer, `auraframe/users/${userId}/originals`, imageId);
 
+    // Bypasses Firestore database completely when no physical frame is linked (testing mode)
+    if (!frameId) {
+      if (style === "original") {
+        return res.json({ imageId, status: "ready", origUrl, styledUrl: origUrl });
+      } else {
+        const { applyStyle } = await import("./style_engine_free.mjs");
+        console.log(`[${imageId}] Synchronously processing style: ${style}`);
+        const styledBuffer = await applyStyle(resizedBuffer, style);
+        const styledUrl = await uploadToCloudinary(styledBuffer, `auraframe/users/${userId}/styled`, `${imageId}_${style}`);
+        return res.json({ imageId, status: "ready", origUrl, styledUrl });
+      }
+    }
+
     const imageDoc = {
-      id: imageId, userId, frameId: frameId || null, style,
+      id: imageId, userId, frameId, style,
       status: style === "original" ? "ready" : "processing",
       origUrl, styledUrl: style === "original" ? origUrl : null,
       caption: caption || null,
@@ -107,11 +120,9 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     await db.collection("images").doc(imageId).set(imageDoc);
 
     if (style === "original") {
-      if (frameId) {
-        await addToFrameQueue(frameId, imageId, origUrl, caption);
-      }
+      await addToFrameQueue(frameId, imageId, origUrl, caption);
     } else {
-      processStyleAsync(imageId, userId, frameId || null, resizedBuffer, style, caption)
+      processStyleAsync(imageId, userId, frameId, resizedBuffer, style, caption)
         .catch(err => console.error(`[${imageId}] Style error:`, err));
     }
 
