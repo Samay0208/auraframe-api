@@ -1,5 +1,5 @@
 /**
- * AuraFrame Cloud API - Updated with Cloudinary
+ * AuraFrame Cloud API - Updated with Cloudinary & Production PIN pairing v1.1.1
  */
 
 import express from "express";
