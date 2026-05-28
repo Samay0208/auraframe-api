@@ -9,6 +9,9 @@ import { HfInference } from "@huggingface/inference";
 // Initialize Hugging Face Inference Client
 const hf = new HfInference(process.env.HF_TOKEN);
 
+// Global list to hold style engine errors in a circular-safe manner
+export const styleErrors = [];
+
 // Free Instant Filters (Sharp implementation)
 async function applyLocalFilter(buffer, style) {
   const image = sharp(buffer);
@@ -176,11 +179,14 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       return Buffer.from(resArray);
     } catch (err) {
       console.error(`Hugging Face styling failed for [${style}]. Falling back to matching local filter.`, err.message);
-      try {
-        const { recordStyleError } = await import("./backend_api.mjs");
-        recordStyleError(style, err.message, err.stack);
-      } catch (e) {
-        console.error("Failed to record style error:", e.message);
+      styleErrors.unshift({
+        style,
+        error: err.message,
+        stack: err.stack,
+        timestamp: new Date().toISOString()
+      });
+      if (styleErrors.length > 20) {
+        styleErrors.pop();
       }
       const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
       return await applyLocalFilter(imageBuffer, fallbackFilter);

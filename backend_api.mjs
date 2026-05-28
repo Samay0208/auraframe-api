@@ -71,23 +71,17 @@ function uploadToCloudinary(buffer, folder, publicId) {
 }
 
 let latestError = null;
-let styleErrors = [];
 
-// Export a helper to record style errors from the style engine
-export function recordStyleError(style, errorMessage, stack) {
-  styleErrors.unshift({
-    style,
-    error: errorMessage,
-    stack,
-    timestamp: new Date().toISOString()
-  });
-  if (styleErrors.length > 20) {
-    styleErrors.pop();
-  }
-}
-
-app.get("/diagnostics/logs", (req, res) => {
+app.get("/diagnostics/logs", async (req, res) => {
   const hfToken = process.env.HF_TOKEN || "";
+  let styleErrors = [];
+  try {
+    const { styleErrors: engineErrors } = await import("./style_engine_free.mjs");
+    styleErrors = engineErrors || [];
+  } catch (e) {
+    console.error("Failed to load style errors:", e.message);
+  }
+
   res.json({
     status: "AuraFrame Diagnostics active",
     timestamp: new Date().toISOString(),
