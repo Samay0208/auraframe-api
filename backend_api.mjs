@@ -70,6 +70,16 @@ function uploadToCloudinary(buffer, folder, publicId) {
   });
 }
 
+let latestError = null;
+
+app.get("/diagnostics/logs", (req, res) => {
+  res.json({
+    status: "AuraFrame Diagnostics active",
+    timestamp: new Date().toISOString(),
+    latestError: latestError || "No server errors recorded yet."
+  });
+});
+
 app.get("/", (req, res) => res.json({ status: "AuraFrame API running", version: "1.1.0" }));
 
 app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res) => {
@@ -108,6 +118,12 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     res.json({ imageId, status: imageDoc.status, origUrl });
   } catch (err) {
     console.error("Upload error:", err);
+    latestError = {
+      route: "/images/upload",
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    };
     res.status(500).json({ error: "Upload failed", detail: err.message });
   }
 });
