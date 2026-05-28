@@ -144,11 +144,38 @@ app.post("/frames/register", requireAuth, async (req, res) => {
     const { name } = req.body;
     const frameId = uuidv4();
     const apiKey  = uuidv4().replace(/-/g, "");
+    const pairingPin = Math.floor(100000 + Math.random() * 900000).toString();
+
     await db.collection("frames").doc(frameId).set({
       id: frameId, name: name || "My AuraFrame", ownerId: req.user.uid,
-      apiKey, images: [], createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      apiKey, pairingPin, images: [], createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    res.json({ frameId, apiKey });
+    res.json({ frameId, apiKey, pairingPin });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post("/frames/pair-by-pin", requireAuth, async (req, res) => {
+  try {
+    const { pin } = req.body;
+    if (!pin) return res.status(400).json({ error: "PIN is required" });
+
+    // Query for the frame registered with this pairing PIN
+    const snap = await db.collection("frames").where("pairingPin", "==", pin.trim()).limit(1).get();
+    if (snap.empty) {
+      return res.status(404).json({ error: "Invalid pairing PIN. Please check the sticker on your frame." });
+    }
+
+    const frameDoc = snap.docs[0];
+    const frameId = frameDoc.id;
+    const frameData = frameDoc.data();
+
+    // Link the frame to the authenticated user's account
+    await db.collection("frames").doc(frameId).update({
+      ownerId: req.user.uid,
+      pairedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({ success: true, frameId, name: frameData.name || "My AuraFrame" });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
