@@ -54,7 +54,7 @@ function generateGridLinesSvg(width, height, spacing = 12, color = "#ff007f", op
   return `<svg width="${width}" height="${height}">${lines}</svg>`;
 }
 
-// Helper: Deep vignette SVG overlay (for Rembrandt, Noir, vignette)
+// Helper: Deep vignette SVG overlay
 function generateVignetteSvg(width, height, opacity = 0.95) {
   return `
     <svg width="${width}" height="${height}">
@@ -72,14 +72,24 @@ function generateVignetteSvg(width, height, opacity = 0.95) {
 // Helper: Generates beautiful organic paper grain (for Watercolor, Charcoal, Pastel)
 function generatePaperGrainSvg(width, height, opacity = 0.08) {
   let circles = "";
-  const points = Math.min(200, Math.floor((width * height) / 3000));
+  const points = Math.min(300, Math.floor((width * height) / 2000));
   for (let i = 0; i < points; i++) {
     const rx = Math.random() * width;
     const ry = Math.random() * height;
-    const r = Math.random() * 2 + 1;
+    const r = Math.random() * 3 + 0.5;
     circles += `<circle cx="${rx}" cy="${ry}" r="${r}" fill="#555555" opacity="${opacity}"/>`;
   }
   return `<svg width="${width}" height="${height}">${circles}</svg>`;
+}
+
+// Helper: Neon glow border SVG (for Cyberpunk, Vaporwave)
+function generateNeonBorderSvg(width, height, color = "#ff007f", thickness = 6, opacity = 0.6) {
+  return `
+    <svg width="${width}" height="${height}">
+      <rect x="${thickness/2}" y="${thickness/2}" width="${width - thickness}" height="${height - thickness}"
+        fill="none" stroke="${color}" stroke-width="${thickness}" opacity="${opacity}" rx="8"/>
+    </svg>
+  `;
 }
 
 // Helper: Generates black ink outlines using Laplacian edge detection
@@ -100,9 +110,26 @@ async function generateInkOutlines(buffer, intensity = 1.5, offset = -40) {
     .toBuffer();
 }
 
+// Helper: Generates embossed/raised surface texture using Sobel-like kernel
+async function generateEmboss(buffer, scale = 1.0) {
+  return await sharp(buffer)
+    .grayscale()
+    .convolve({
+      width: 3,
+      height: 3,
+      kernel: [
+        -2, -1, 0,
+        -1,  1, 1,
+         0,  1, 2
+      ],
+      scale: scale
+    })
+    .toBuffer();
+}
+
 /**
  * Executes a premium programmatic styling pipeline.
- * Bypasses flaky network queues, completing beautiful renders in under 200ms.
+ * Each style uses multi-step compositing for visually stunning results.
  */
 export async function applyStyle(imageBuffer, style, customPrompt = "") {
   console.log(`StyleEngine: Programmatic processing for style [${style}]`);
@@ -113,7 +140,9 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
     const h = metadata.height || 600;
 
     switch (style) {
-      // --- LOCAL / BASIC STYLES ---
+      // ═══════════════════════════════════════════════════════════════════
+      //  FREE / BASIC STYLES (user confirmed these work well — untouched)
+      // ═══════════════════════════════════════════════════════════════════
       case "original":
         return imageBuffer;
 
@@ -145,9 +174,11 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
           .toBuffer();
       }
 
-      // --- PRO STYLES ---
+      // ═══════════════════════════════════════════════════════════════════
+      //  PRO STYLES — sketch, ink, watercolor, oilpainting confirmed good
+      // ═══════════════════════════════════════════════════════════════════
       case "sketch": {
-        // High-fidelity Color Dodge pencil sketch algorithm (Photoshop matching)
+        // Color Dodge pencil sketch (Photoshop matching) — CONFIRMED GOOD
         const gray = await sharp(imageBuffer).grayscale().toBuffer();
         const invertedBlurred = await sharp(gray)
           .negate()
@@ -158,21 +189,8 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
           .toBuffer();
       }
 
-      case "charcoal": {
-        // High-contrast, soft-blurred grayscale sketch with paper texture grain
-        const darkBw = await sharp(imageBuffer)
-          .grayscale()
-          .linear(1.4, -25)
-          .blur(2)
-          .toBuffer();
-        const grain = generatePaperGrainSvg(w, h, 0.12);
-        return await sharp(darkBw)
-          .composite([{ input: Buffer.from(grain), blend: "overlay" }])
-          .toBuffer();
-      }
-
       case "ink": {
-        // Deep ink outlines blended over high-contrast posterized shading
+        // Deep ink outlines over high-contrast shading — CONFIRMED GOOD
         const outlines = await generateInkOutlines(imageBuffer, 1.8, -60);
         const shading = await sharp(imageBuffer)
           .grayscale()
@@ -184,7 +202,7 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       }
 
       case "watercolor": {
-        // Wet color smoothing and saturation boost overlaid with fine paper grain
+        // Wet color smoothing with saturation boost — CONFIRMED GOOD
         const smoothed = await sharp(imageBuffer)
           .blur(4)
           .recomb([
@@ -200,7 +218,7 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       }
 
       case "oilpainting": {
-        // Saturated impasto mapping blended with crosshatched canvas threads
+        // Saturated impasto with canvas threads — CONFIRMED GOOD
         const richColors = await sharp(imageBuffer)
           .recomb([
             [1.3, 0.1, -0.1],
@@ -215,123 +233,170 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
           .toBuffer();
       }
 
-      case "impressionist": {
-        // Vibrant impressionistic color grading overlaid with subtle canvas weave
-        const colorGraded = await sharp(imageBuffer)
-          .recomb([
-            [1.4, -0.1, 0.1],
-            [0.1, 1.4, -0.1],
-            [-0.1, 0.1, 1.4]
+      // ═══════════════════════════════════════════════════════════════════
+      //  PRO STYLES — IMPROVED
+      // ═══════════════════════════════════════════════════════════════════
+
+      case "charcoal": {
+        // Multi-layer charcoal: dark sketch + inverted soft layer + heavy paper grain
+        const gray = await sharp(imageBuffer).grayscale().toBuffer();
+        const darkSketch = await sharp(gray).linear(1.8, -60).toBuffer();
+        const softInvert = await sharp(gray).negate().blur(8).linear(0.4, 0).toBuffer();
+        const grainSvg = generatePaperGrainSvg(w, h, 0.18);
+        return await sharp(darkSketch)
+          .composite([
+            { input: softInvert, blend: "soft-light" },
+            { input: Buffer.from(grainSvg), blend: "overlay" }
           ])
-          .tint({ r: 255, g: 235, b: 200 })
           .toBuffer();
-        const canvas = generateCanvasSvg(w, h, 8, 0.12);
-        return await sharp(colorGraded)
-          .composite([{ input: Buffer.from(canvas), blend: "soft-light" }])
+      }
+
+      case "impressionist": {
+        // Painterly: median smoothing + vivid warm saturation + emboss texture + canvas
+        const painted = await sharp(imageBuffer)
+          .median(7)
+          .modulate({ saturation: 1.7, brightness: 1.05 })
+          .toBuffer();
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const canvasSvg = generateCanvasSvg(w, h, 7, 0.14);
+        return await sharp(painted)
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(canvasSvg), blend: "overlay" }
+          ])
           .toBuffer();
       }
 
       case "vangogh": {
-        // Swirling Van Gogh rich yellow and blue grading combined with heavy canvas texture
-        const starryGrading = await sharp(imageBuffer)
+        // Dramatic swirling: median smoothing + extreme yellow/blue channel shift + emboss strokes + heavy canvas
+        const paintBase = await sharp(imageBuffer)
+          .median(5)
           .recomb([
-            [0.8, 0.2, 0.5],
-            [0.1, 1.3, 0.1],
-            [0.6, -0.2, 1.5]
+            [0.7, 0.3, 0.5],
+            [0.0, 1.4, 0.0],
+            [0.5, -0.3, 1.6]
           ])
-          .linear(1.3, -15)
+          .modulate({ saturation: 1.6, brightness: 1.05 })
           .toBuffer();
-        const canvas = generateCanvasSvg(w, h, 5, 0.18);
-        return await sharp(starryGrading)
-          .composite([{ input: Buffer.from(canvas), blend: "overlay" }])
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const canvasSvg = generateCanvasSvg(w, h, 4, 0.22);
+        return await sharp(paintBase)
+          .composite([
+            { input: emboss, blend: "overlay" },
+            { input: Buffer.from(canvasSvg), blend: "overlay" }
+          ])
           .toBuffer();
       }
 
       case "cartoon": {
-        // Saturated flat posterized base overlaid with bold outlines
-        const outlines = await generateInkOutlines(imageBuffer, 2.0, -80);
-        const celShaded = await sharp(imageBuffer)
-          .recomb([
-            [1.3, 0, 0],
-            [0, 1.3, 0],
-            [0, 0, 1.3]
-          ])
-          .blur(2)
+        // Bold cartoon: heavy median for flat cel-shading + super-saturated colors + thick outlines
+        const outlines = await generateInkOutlines(imageBuffer, 2.2, -90);
+        const celBase = await sharp(imageBuffer)
+          .median(7)
+          .modulate({ saturation: 1.8, brightness: 1.05 })
+          .linear(1.2, -10)
           .toBuffer();
-        return await sharp(celShaded)
+        return await sharp(celBase)
           .composite([{ input: outlines, blend: "multiply" }])
           .toBuffer();
       }
 
       case "anime": {
-        // Clean ink outlines, soft cell-shading, and a nostalgic cool animation tint
-        const outlines = await generateInkOutlines(imageBuffer, 1.6, -50);
-        const animeColor = await sharp(imageBuffer)
-          .blur(3)
-          .tint({ r: 210, g: 230, b: 255 })
+        // Anime cel-shading: median smooth + warm-cool anime palette + fine outlines + subtle vignette
+        const outlines = await generateInkOutlines(imageBuffer, 1.7, -55);
+        const animeBase = await sharp(imageBuffer)
+          .median(5)
+          .modulate({ saturation: 1.4, brightness: 1.08 })
+          .recomb([
+            [1.1, 0.05, -0.05],
+            [-0.05, 1.1, 0.1],
+            [0.0, -0.05, 1.2]
+          ])
           .toBuffer();
-        return await sharp(animeColor)
-          .composite([{ input: outlines, blend: "multiply" }])
+        const vignette = generateVignetteSvg(w, h, 0.4);
+        return await sharp(animeBase)
+          .composite([
+            { input: outlines, blend: "multiply" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "popArt": {
-        // Saturated Andy Warhol color grading combined with halftone screen patterns
-        const warholGrading = await sharp(imageBuffer)
+        // Andy Warhol: extreme saturation + posterized contrast + bold halftone dots + vivid color shift
+        const warholBase = await sharp(imageBuffer)
+          .modulate({ saturation: 2.5, brightness: 1.1 })
           .recomb([
-            [1.6, -0.2, -0.2],
-            [-0.2, 1.6, -0.2],
-            [-0.2, -0.2, 1.6]
+            [1.8, -0.4, -0.2],
+            [-0.3, 1.7, -0.2],
+            [-0.2, -0.3, 1.8]
           ])
-          .linear(1.4, -20)
+          .linear(1.5, -30)
           .toBuffer();
-        const halftone = generateHalftoneSvg(w, h, 5, 10, 0.16);
-        return await sharp(warholGrading)
-          .composite([{ input: Buffer.from(halftone), blend: "multiply" }])
+        const halftoneSvg = generateHalftoneSvg(w, h, 6, 12, 0.2);
+        return await sharp(warholBase)
+          .composite([{ input: Buffer.from(halftoneSvg), blend: "multiply" }])
           .toBuffer();
       }
 
       case "pixelArt": {
-        // Retro 16-bit game asset simulation using nearest-neighbor scaling
-        return await sharp(imageBuffer)
-          .resize(80, 80, { kernel: sharp.kernel.nearest })
+        // Retro pixel: downsample to tiny + saturate colors + hard upscale
+        const tiny = await sharp(imageBuffer)
+          .resize(64, Math.round(64 * (h / w)), { kernel: sharp.kernel.nearest })
+          .modulate({ saturation: 1.6 })
+          .linear(1.15, -8)
+          .toBuffer();
+        return await sharp(tiny)
           .resize(w, h, { kernel: sharp.kernel.nearest })
           .toBuffer();
       }
 
       case "ukiyoe": {
-        // Traditional woodcut sepia color base overlaid with fine ink outlines
-        const outlines = await generateInkOutlines(imageBuffer, 1.5, -40);
-        const sepiaBase = await sharp(imageBuffer)
+        // Japanese woodblock: flat posterized warm tones + bold outlines + subtle emboss grain
+        const outlines = await generateInkOutlines(imageBuffer, 2.0, -70);
+        const flatBase = await sharp(imageBuffer)
+          .median(5)
           .recomb([
-            [0.393, 0.769, 0.189],
-            [0.349, 0.686, 0.168],
-            [0.272, 0.534, 0.131],
+            [0.5, 0.7, 0.1],
+            [0.3, 0.75, 0.15],
+            [0.2, 0.5, 0.1],
           ])
-          .linear(1.1, -10)
+          .modulate({ saturation: 0.7 })
+          .linear(1.3, -15)
           .toBuffer();
-        return await sharp(sepiaBase)
-          .composite([{ input: outlines, blend: "multiply" }])
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        return await sharp(flatBase)
+          .composite([
+            { input: outlines, blend: "multiply" },
+            { input: emboss, blend: "soft-light" }
+          ])
           .toBuffer();
       }
 
       case "lowpoly": {
-        // Faceted geometric pixel rendering combined with cool digital gaming tones
-        return await sharp(imageBuffer)
-          .resize(56, 56, { kernel: sharp.kernel.nearest })
-          .tint({ r: 180, g: 220, b: 255 })
+        // Geometric facets: aggressive downsample + saturate + slight emboss for facet edges
+        const faceted = await sharp(imageBuffer)
+          .resize(40, Math.round(40 * (h / w)), { kernel: sharp.kernel.nearest })
+          .modulate({ saturation: 1.3, brightness: 1.05 })
+          .toBuffer();
+        const upscaled = await sharp(faceted)
           .resize(w, h, { kernel: sharp.kernel.nearest })
+          .toBuffer();
+        const emboss = await generateEmboss(upscaled, 1.0);
+        return await sharp(upscaled)
+          .composite([{ input: emboss, blend: "soft-light" }])
           .toBuffer();
       }
 
       case "manga": {
-        // Black and white screen tones overlaid with crisp ink outlines
-        const outlines = await generateInkOutlines(imageBuffer, 1.9, -70);
+        // Japanese manga: high-contrast B&W + bold outlines + dense screen tone dots
+        const outlines = await generateInkOutlines(imageBuffer, 2.2, -80);
         const grayBase = await sharp(imageBuffer)
           .grayscale()
-          .linear(1.7, -50)
+          .normalise()
+          .linear(2.0, -60)
           .toBuffer();
-        const screenTone = generateHalftoneSvg(w, h, 2, 4, 0.18);
+        const screenTone = generateHalftoneSvg(w, h, 3, 5, 0.22);
         return await sharp(grayBase)
           .composite([
             { input: outlines, blend: "multiply" },
@@ -340,192 +405,299 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
           .toBuffer();
       }
 
-      // --- PREMIUM STYLES ---
+      // ═══════════════════════════════════════════════════════════════════
+      //  PREMIUM STYLES — IMPROVED
+      // ═══════════════════════════════════════════════════════════════════
+
       case "ghibli": {
-        // Whimsical Studio Ghibli warm palette, soft bled colors, and fine outlines
-        const outlines = await generateInkOutlines(imageBuffer, 1.5, -40);
+        // Studio Ghibli: median painterly smooth + warm nostalgic palette + soft outlines + dreamy glow
+        const outlines = await generateInkOutlines(imageBuffer, 1.4, -35);
         const ghibliBase = await sharp(imageBuffer)
-          .blur(3)
-          .tint({ r: 255, g: 238, b: 205 }) // nostalgic warm Miyazaki tint
+          .median(5)
+          .modulate({ saturation: 1.3, brightness: 1.08 })
+          .recomb([
+            [1.15, 0.05, -0.05],
+            [0.0, 1.1, 0.05],
+            [-0.05, 0.0, 0.9]
+          ])
+          .tint({ r: 255, g: 242, b: 218 })
           .toBuffer();
+        const glow = await sharp(imageBuffer).blur(20).modulate({ brightness: 1.2 }).toBuffer();
         return await sharp(ghibliBase)
-          .composite([{ input: outlines, blend: "multiply" }])
+          .composite([
+            { input: glow, blend: "soft-light" },
+            { input: outlines, blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "acrylic": {
-        // Modern high-contrast color recomb overlayed with canvas textures
-        const acrylicGrading = await sharp(imageBuffer)
-          .recomb([
-            [1.5, -0.1, -0.1],
-            [-0.1, 1.5, -0.1],
-            [-0.1, -0.1, 1.5]
-          ])
+        // Modern acrylic: heavy median for thick paint + extreme saturation + emboss impasto + canvas
+        const paintBase = await sharp(imageBuffer)
+          .median(9)
+          .modulate({ saturation: 1.9, brightness: 1.05 })
           .linear(1.3, -15)
           .toBuffer();
-        const canvas = generateCanvasSvg(w, h, 5, 0.15);
-        return await sharp(acrylicGrading)
-          .composite([{ input: Buffer.from(canvas), blend: "overlay" }])
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const canvasSvg = generateCanvasSvg(w, h, 5, 0.18);
+        return await sharp(paintBase)
+          .composite([
+            { input: emboss, blend: "overlay" },
+            { input: Buffer.from(canvasSvg), blend: "overlay" }
+          ])
           .toBuffer();
       }
 
       case "cubism": {
-        // Picasso-inspired geometric channel shifting
-        return await img
+        // Picasso cubism: wild color channel shift + posterized contrast + emboss geometric edges + outlines
+        const outlines = await generateInkOutlines(imageBuffer, 1.6, -50);
+        const cubistBase = await sharp(imageBuffer)
+          .median(3)
           .recomb([
-            [0.8, 0.8, -0.5],
-            [-0.5, 0.8, 0.8],
-            [0.8, -0.5, 0.8]
+            [1.0, 0.8, -0.6],
+            [-0.6, 1.0, 0.8],
+            [0.8, -0.6, 1.0]
           ])
-          .linear(1.3, -20)
+          .modulate({ saturation: 1.4 })
+          .linear(1.4, -25)
+          .toBuffer();
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        return await sharp(cubistBase)
+          .composite([
+            { input: emboss, blend: "hard-light" },
+            { input: outlines, blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "artnouveau": {
-        // Flowing art-nouveau warm golden border tint
-        return await img
-          .tint({ r: 250, g: 220, b: 175 })
-          .linear(1.2, -15)
+        // Art Nouveau: warm golden palette + soft painterly median + emboss flowing lines + vignette
+        const artBase = await sharp(imageBuffer)
+          .median(5)
+          .recomb([
+            [1.2, 0.15, -0.05],
+            [0.05, 1.05, 0.05],
+            [-0.1, 0.0, 0.75]
+          ])
+          .modulate({ saturation: 1.3, brightness: 1.05 })
+          .tint({ r: 250, g: 225, b: 185 })
+          .toBuffer();
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const vignette = generateVignetteSvg(w, h, 0.6);
+        return await sharp(artBase)
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "renaissance": {
-        // Deep Rembrandt chiaroscuro lighting (radial dark vignette) on sepia-tint base
-        const sepiaBase = await sharp(imageBuffer)
+        // Rembrandt chiaroscuro: deep dark sepia + dramatic vignette + emboss surface + canvas
+        const renaissanceBase = await sharp(imageBuffer)
+          .median(3)
           .recomb([
-            [0.393, 0.769, 0.189],
-            [0.349, 0.686, 0.168],
-            [0.272, 0.534, 0.131],
+            [0.45, 0.75, 0.15],
+            [0.35, 0.7, 0.12],
+            [0.25, 0.5, 0.1],
           ])
-          .linear(1.2, -25)
+          .modulate({ saturation: 0.6, brightness: 0.85 })
+          .linear(1.4, -35)
           .toBuffer();
-        const vignette = generateVignetteSvg(w, h, 0.96);
-        return await sharp(sepiaBase)
-          .composite([{ input: Buffer.from(vignette), blend: "multiply" }])
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const canvasSvg = generateCanvasSvg(w, h, 6, 0.12);
+        const vignette = generateVignetteSvg(w, h, 0.97);
+        return await sharp(renaissanceBase)
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(canvasSvg), blend: "overlay" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "pastel": {
-        // Gentle soft hues overlayed with granular chalk-dust paper grain
-        const softPastel = await sharp(imageBuffer)
-          .tint({ r: 255, g: 240, b: 245 })
-          .linear(1.15, -5)
+        // Soft pastel chalk: desaturated soft tones + median smoothing + heavy paper grain + light blur
+        const pastelBase = await sharp(imageBuffer)
+          .median(5)
+          .modulate({ saturation: 0.55, brightness: 1.15 })
+          .blur(1.5)
+          .tint({ r: 255, g: 235, b: 240 })
           .toBuffer();
-        const grain = generatePaperGrainSvg(w, h, 0.12);
-        return await sharp(softPastel)
-          .composite([{ input: Buffer.from(grain), blend: "overlay" }])
+        const grainSvg = generatePaperGrainSvg(w, h, 0.2);
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        return await sharp(pastelBase)
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(grainSvg), blend: "overlay" }
+          ])
           .toBuffer();
       }
 
       case "comicbook": {
-        // Vintage pulp comic print with bold outlines and halftone dots
-        const outlines = await generateInkOutlines(imageBuffer, 1.8, -60);
-        const saturated = await sharp(imageBuffer)
-          .recomb([
-            [1.4, 0, 0],
-            [0, 1.4, 0],
-            [0, 0, 1.4]
-          ])
-          .linear(1.3, -20)
+        // Marvel/DC comic: cel-shaded median + vivid saturated colors + thick outlines + big halftone dots
+        const outlines = await generateInkOutlines(imageBuffer, 2.2, -85);
+        const comicBase = await sharp(imageBuffer)
+          .median(5)
+          .modulate({ saturation: 2.0, brightness: 1.1 })
+          .linear(1.4, -20)
           .toBuffer();
-        const halftone = generateHalftoneSvg(w, h, 4, 8, 0.14);
-        return await sharp(saturated)
+        const halftoneSvg = generateHalftoneSvg(w, h, 5, 10, 0.18);
+        return await sharp(comicBase)
           .composite([
             { input: outlines, blend: "multiply" },
-            { input: Buffer.from(halftone), blend: "multiply" }
+            { input: Buffer.from(halftoneSvg), blend: "multiply" }
           ])
           .toBuffer();
       }
 
       case "storybook": {
-        // Whimsical warm magical golden glow with a soft atmospheric blur
-        return await img
-          .tint({ r: 255, g: 228, b: 180 })
-          .blur(1.5)
-          .linear(1.2, -10)
+        // Magical storybook: warm soft glow + median painterly + soft outlines + dreamy vignette
+        const outlines = await generateInkOutlines(imageBuffer, 1.2, -30);
+        const storyBase = await sharp(imageBuffer)
+          .median(5)
+          .modulate({ saturation: 1.3, brightness: 1.1 })
+          .tint({ r: 255, g: 232, b: 195 })
+          .toBuffer();
+        const glow = await sharp(imageBuffer).blur(25).modulate({ brightness: 1.3 }).toBuffer();
+        const vignette = generateVignetteSvg(w, h, 0.5);
+        return await sharp(storyBase)
+          .composite([
+            { input: glow, blend: "soft-light" },
+            { input: outlines, blend: "multiply" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "cyberpunk": {
-        // Highly saturated magenta/cyan neon coloring with horizontal scanlines
+        // Neon cyberpunk: extreme magenta/cyan shift + high contrast + scanlines + neon glow border + vignette
         const neonBase = await sharp(imageBuffer)
           .recomb([
-            [1.6, -0.3, 0.2],
-            [-0.2, 1.5, 0.3],
-            [0.4, -0.4, 1.8]
+            [1.4, -0.4, 0.4],
+            [-0.3, 1.2, 0.5],
+            [0.5, -0.5, 1.9]
           ])
+          .modulate({ saturation: 1.8, brightness: 1.05 })
+          .linear(1.3, -15)
           .toBuffer();
-        const scanlines = generateGridLinesSvg(w, h, 10, "#ff007f", 0.15);
+        const scanSvg = generateGridLinesSvg(w, h, 4, "#ff007f", 0.08);
+        const neonBorder = generateNeonBorderSvg(w, h, "#00ffff", 4, 0.5);
+        const vignette = generateVignetteSvg(w, h, 0.7);
         return await sharp(neonBase)
-          .composite([{ input: Buffer.from(scanlines), blend: "screen" }])
+          .composite([
+            { input: Buffer.from(scanSvg), blend: "screen" },
+            { input: Buffer.from(neonBorder), blend: "screen" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "darkfantasy": {
-        // Moody dark fantasy oil painting with heavy vignetted shadow details
+        // Grim dark fantasy: desaturated dark tones + emboss texture + canvas + heavy vignette
         const darkBase = await sharp(imageBuffer)
-          .tint({ r: 180, g: 190, b: 200 })
-          .linear(1.3, -45)
+          .median(3)
+          .modulate({ saturation: 0.4, brightness: 0.7 })
+          .recomb([
+            [0.9, 0.1, 0.1],
+            [0.05, 0.85, 0.15],
+            [0.1, 0.1, 0.95]
+          ])
+          .linear(1.5, -50)
           .toBuffer();
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const canvasSvg = generateCanvasSvg(w, h, 6, 0.12);
         const vignette = generateVignetteSvg(w, h, 0.98);
         return await sharp(darkBase)
-          .composite([{ input: Buffer.from(vignette), blend: "multiply" }])
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(canvasSvg), blend: "overlay" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "steampunk": {
-        // Industrial Victorian copper sepia with fine mesh overlays
+        // Victorian steampunk: copper sepia + emboss mechanical texture + mesh overlay + vignette
         const copperBase = await sharp(imageBuffer)
+          .median(3)
           .recomb([
-            [0.393, 0.769, 0.189],
-            [0.349, 0.686, 0.168],
-            [0.272, 0.534, 0.131],
+            [0.5, 0.7, 0.15],
+            [0.35, 0.65, 0.12],
+            [0.2, 0.45, 0.1],
           ])
-          .tint({ r: 255, g: 200, b: 150 })
-          .linear(1.2, -15)
+          .tint({ r: 240, g: 190, b: 130 })
+          .modulate({ saturation: 0.8, brightness: 0.95 })
+          .linear(1.3, -20)
           .toBuffer();
-        const canvas = generateCanvasSvg(w, h, 10, 0.18);
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const meshSvg = generateCanvasSvg(w, h, 8, 0.2);
+        const vignette = generateVignetteSvg(w, h, 0.8);
         return await sharp(copperBase)
-          .composite([{ input: Buffer.from(canvas), blend: "multiply" }])
+          .composite([
+            { input: emboss, blend: "overlay" },
+            { input: Buffer.from(meshSvg), blend: "multiply" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
       case "vaporwave": {
-        // Glitchy grid vaporwave styling with glowing neon gridlines
+        // Retro vaporwave: extreme pink/cyan shift + halftone overlay + neon gridlines + scanlines
         const vaporBase = await sharp(imageBuffer)
           .recomb([
-            [1.4, -0.4, 0.5],
-            [0.5, 1.4, -0.4],
-            [-0.4, 0.5, 1.4]
+            [1.5, -0.5, 0.6],
+            [0.4, 1.2, -0.4],
+            [-0.4, 0.6, 1.6]
           ])
+          .modulate({ saturation: 1.8, brightness: 1.05 })
+          .linear(1.2, -10)
           .toBuffer();
-        const grid = generateGridLinesSvg(w, h, 16, "#00ffff", 0.15);
+        const gridSvg = generateGridLinesSvg(w, h, 20, "#00ffff", 0.12);
+        const scanSvg = generateGridLinesSvg(w, h, 3, "#ff69b4", 0.06);
+        const neonBorder = generateNeonBorderSvg(w, h, "#ff69b4", 4, 0.45);
         return await sharp(vaporBase)
-          .composite([{ input: Buffer.from(grid), blend: "screen" }])
+          .composite([
+            { input: Buffer.from(gridSvg), blend: "screen" },
+            { input: Buffer.from(scanSvg), blend: "screen" },
+            { input: Buffer.from(neonBorder), blend: "screen" }
+          ])
           .toBuffer();
       }
 
       case "filmnoir": {
-        // High-contrast grayscale with venetian blind shadow overlay
+        // Classic film noir: ultra-contrast B&W + dramatic venetian blinds + grain + deep vignette
         const bwNoir = await sharp(imageBuffer)
           .grayscale()
-          .linear(1.65, -35)
+          .normalise()
+          .linear(1.8, -45)
           .toBuffer();
-        const blinds = generateVenetianBlindsSvg(w, h, 0.45);
-        const vignette = generateVignetteSvg(w, h, 0.95);
+        const blindsSvg = generateVenetianBlindsSvg(w, h, 0.5);
+        const grainSvg = generatePaperGrainSvg(w, h, 0.1);
+        const vignette = generateVignetteSvg(w, h, 0.96);
         return await sharp(bwNoir)
           .composite([
-            { input: Buffer.from(blinds), blend: "multiply" },
+            { input: Buffer.from(blindsSvg), blend: "multiply" },
+            { input: Buffer.from(grainSvg), blend: "overlay" },
             { input: Buffer.from(vignette), blend: "multiply" }
           ])
           .toBuffer();
       }
 
       case "custom": {
-        // Soft warm concept art glow mapping
-        return await img
-          .tint({ r: 255, g: 220, b: 170 })
-          .linear(1.2, -10)
+        // Concept art: warm glow + median paint + soft emboss + vignette
+        const customBase = await sharp(imageBuffer)
+          .median(5)
+          .modulate({ saturation: 1.2, brightness: 1.05 })
+          .tint({ r: 255, g: 225, b: 180 })
+          .toBuffer();
+        const emboss = await generateEmboss(imageBuffer, 1.0);
+        const vignette = generateVignetteSvg(w, h, 0.5);
+        return await sharp(customBase)
+          .composite([
+            { input: emboss, blend: "soft-light" },
+            { input: Buffer.from(vignette), blend: "multiply" }
+          ])
           .toBuffer();
       }
 
