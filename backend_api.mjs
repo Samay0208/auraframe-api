@@ -56,7 +56,7 @@ app.get("/", (req, res) => res.json({ status: "AuraFrame API running", version: 
 
 app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res) => {
   try {
-    const { style = "original", frameId } = req.body;
+    const { style = "original", frameId, caption } = req.body;
     const userId  = req.user.uid;
     const imageId = uuidv4();
 
@@ -74,14 +74,15 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
       id: imageId, userId, frameId, style,
       status: style === "original" ? "ready" : "processing",
       origUrl, styledUrl: style === "original" ? origUrl : null,
+      caption: caption || null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     await db.collection("images").doc(imageId).set(imageDoc);
 
     if (style === "original") {
-      await addToFrameQueue(frameId, imageId, origUrl);
+      await addToFrameQueue(frameId, imageId, origUrl, caption);
     } else {
-      processStyleAsync(imageId, userId, frameId, resizedBuffer, style)
+      processStyleAsync(imageId, userId, frameId, resizedBuffer, style, caption)
         .catch(err => console.error(`[${imageId}] Style error:`, err));
     }
 
@@ -92,14 +93,14 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
   }
 });
 
-async function processStyleAsync(imageId, userId, frameId, imageBuffer, style) {
+async function processStyleAsync(imageId, userId, frameId, imageBuffer, style, caption) {
   try {
     const { applyStyle } = await import("./style_engine_free.mjs");
     console.log(`[${imageId}] Processing style: ${style}`);
     const styledBuffer = await applyStyle(imageBuffer, style);
     const styledUrl = await uploadToCloudinary(styledBuffer, `auraframe/users/${userId}/styled`, `${imageId}_${style}`);
     await db.collection("images").doc(imageId).update({ styledUrl, status: "ready" });
-    await addToFrameQueue(frameId, imageId, styledUrl);
+    await addToFrameQueue(frameId, imageId, styledUrl, caption);
     console.log(`[${imageId}] Done`);
   } catch (err) {
     console.error(`[${imageId}] Failed:`, err);
@@ -107,9 +108,12 @@ async function processStyleAsync(imageId, userId, frameId, imageBuffer, style) {
   }
 }
 
-async function addToFrameQueue(frameId, imageId, url) {
+async function addToFrameQueue(frameId, imageId, url, caption = null) {
+  const queueItem = { id: imageId, url };
+  if (caption) queueItem.caption = caption;
+
   await db.collection("frames").doc(frameId).set(
-    { images: admin.firestore.FieldValue.arrayUnion({ id: imageId, url }), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { images: admin.firestore.FieldValue.arrayUnion(queueItem), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
     { merge: true }
   );
 }
