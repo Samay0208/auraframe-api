@@ -1,14 +1,10 @@
 /**
- * AuraFrame Cloud Style Engine
- * Processes 35 styles across 3 tiers: local filters (Sharp), Pro (Hugging Face), and Premium (Fal.ai).
+ * AuraFrame Cloud Style Engine - High-Fidelity Unified AI Pipeline
+ * Routes all 28 AI styles through the premium Fal.ai FLUX engine for instant, jaw-dropping art.
  */
 
 import sharp from "sharp";
-import { HfInference } from "@huggingface/inference";
 import { fal } from "@fal-ai/client";
-
-// Initialize Hugging Face Inference Client
-const hf = new HfInference(process.env.HF_TOKEN);
 
 // Free Instant Filters (Sharp implementation)
 async function applyLocalFilter(buffer, style) {
@@ -19,7 +15,6 @@ async function applyLocalFilter(buffer, style) {
       return await image.grayscale().toBuffer();
 
     case "sepia":
-      // Classic sepia recombination matrix
       return await image
         .recomb([
           [0.393, 0.769, 0.189],
@@ -29,23 +24,19 @@ async function applyLocalFilter(buffer, style) {
         .toBuffer();
 
     case "highcontrast":
-      // Enhances contrast using normalise and linear stretching
       return await image.normalise().linear(1.3, -15).toBuffer();
 
     case "warmglow":
-      // Adds a golden amber warmth tint
       return await image
         .tint({ r: 255, g: 215, b: 160 })
         .toBuffer();
 
     case "cooltint":
-      // Adds a cool blue/cyan tint
       return await image
         .tint({ r: 160, g: 195, b: 255 })
         .toBuffer();
 
     case "vignette": {
-      // Vignette SVG overlay (soft dark edges)
       const metadata = await image.metadata();
       const width = metadata.width || 1024;
       const height = metadata.height || 600;
@@ -73,69 +64,26 @@ async function applyLocalFilter(buffer, style) {
   }
 }
 
-// Pro Hugging Face Models and Prompt mappings
-const HF_MAPPING = {
-  sketch: {
-    model: "stabilityai/stable-diffusion-xl-refiner-1.0",
-    prompt: "fine line pencil sketch, beautiful hand-drawn art, clean graphite lines, paper texture",
-  },
-  charcoal: {
-    model: "stabilityai/stable-diffusion-xl-refiner-1.0",
-    prompt: "smudged charcoal sketch, fine art charcoal drawing, rich dark values, textured paper",
-  },
-  ink: {
-    model: "stabilityai/stable-diffusion-xl-refiner-1.0",
-    prompt: "elegant black ink drawing, crosshatching illustration style, graphic novel ink drawing",
-  },
-  watercolor: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "beautiful wet-on-wet watercolor painting, soft pigment washes, delicate floral bleed effects",
-  },
-  oilpainting: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "classical oil painting on canvas, visible textured brushstrokes, rich warm colors, masterpiece",
-  },
-  impressionist: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "impressionist painting style, light reflections, loose quick brush strokes, vibrant Claude Monet style",
-  },
-  vangogh: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "expressive Vincent Van Gogh painting, heavy swirling impasto brushstrokes, Starry Night sky palette",
-  },
-  cartoon: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "modern bold 2d vector cartoon illustration, flat colors, thick dark outlines",
-  },
-  anime: {
-    model: "stablediffusionapi/anything-v5",
-    prompt: "detailed anime illustration, beautiful animation keyframe, Studio Ghibli vibes, colorful",
-  },
-  popArt: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "bold pop art silkscreen print, Andy Warhol style, high contrast, vibrant blocky colors",
-  },
-  pixelArt: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "high quality retro 16-bit pixel art, pixelated game screen background",
-  },
-  ukiyoe: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "classic Japanese ukiyo-e woodblock print, Hokusai aesthetic, flat colors and fine linework",
-  },
-  lowpoly: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "low-poly 3D geometric mesh render, faceted shapes, papercraft aesthetic",
-  },
-  manga: {
-    model: "runwayml/stable-diffusion-v1-5",
-    prompt: "monochrome black and white manga drawing, clean screen tone shading, professional ink lines",
-  },
-};
+// Unified High-Fidelity AI prompts mapping (FLUX and SDXL optimized)
+const AI_MAPPING = {
+  // Pro Styles (routed to Fal.ai for breathtaking results)
+  sketch: "fine line pencil sketch, beautiful hand-drawn graphite line art, clean shading, textured paper background",
+  charcoal: "textured charcoal sketch, fine art charcoal drawing, rich dark values, smudged shadows",
+  ink: "elegant black ink illustration, crosshatching drawing style, graphic novel ink illustration",
+  watercolor: "fluid wet-on-wet watercolor painting, soft pigment washes, delicate color bleed effects",
+  oilpainting: "classical oil painting on canvas, visible thick impasto brushstrokes, rich colorful masterwork",
+  impressionist: "vibrant impressionist painting, beautiful outdoor light reflections, loose quick brush strokes, Claude Monet style",
+  vangogh: "Vincent Van Gogh oil painting, swirling starry night sky impasto, thick swirling yellow and blue brushstrokes",
+  cartoon: "modern bold 2d vector cartoon illustration, flat clean colors, thick black outlines",
+  anime: "classic retro anime aesthetic, gorgeous hand-drawn animation keyframe, colorful animation art",
+  popArt: "bold pop art silkscreen print, Andy Warhol style, high contrast, vibrant blocky primary colors",
+  pixelArt: "high quality retro 16-bit pixel art, pixelated game screen background, clean gaming asset",
+  ukiyoe: "classic Japanese ukiyo-e woodblock print, Hokusai wave landscape aesthetic, flat colors and fine linework",
+  lowpoly: "low-poly 3D geometric mesh render, faceted papercraft shapes, minimal clean digital graphics",
+  manga: "japanese manga page, black and white ink line drawing, clean screen tone shading, comic book panels",
 
-// Premium Fal.ai Flux prompts
-const FAL_MAPPING = {
-  ghibli: "Studio Ghibli aesthetic, hand-drawn anime keyframe, rich watercolor colors, nostalgic soft lighting",
+  // Premium Styles
+  ghibli: "Studio Ghibli aesthetic, hand-drawn anime keyframe, rich watercolor colors, nostalgic soft warm lighting",
   acrylic: "modern abstract acrylic painting, thick textured brush strokes, vibrant canvas, contemporary art",
   cubism: "analytical cubism painting style, fractured geometric shapes, neutral color tones, Pablo Picasso aesthetic",
   artnouveau: "art nouveau illustration, elegant flowing lines, organic floral frames, Alphonse Mucha styling",
@@ -151,6 +99,38 @@ const FAL_MAPPING = {
   custom: "gorgeous conceptual art painting",
 };
 
+// Fallback mapper if FAL_KEY is missing (maps to the most visually matching local filter)
+const FALLBACK_MAP = {
+  sketch: "blackwhite",
+  charcoal: "blackwhite",
+  ink: "highcontrast",
+  watercolor: "warmglow",
+  oilpainting: "warmglow",
+  impressionist: "cooltint",
+  vangogh: "warmglow",
+  cartoon: "highcontrast",
+  anime: "cooltint",
+  popArt: "highcontrast",
+  pixelArt: "highcontrast",
+  ukiyoe: "sepia",
+  lowpoly: "cooltint",
+  manga: "blackwhite",
+  ghibli: "warmglow",
+  acrylic: "warmglow",
+  cubism: "sepia",
+  artnouveau: "warmglow",
+  renaissance: "sepia",
+  pastel: "warmglow",
+  comicbook: "highcontrast",
+  storybook: "warmglow",
+  cyberpunk: "cooltint",
+  darkfantasy: "vignette",
+  steampunk: "sepia",
+  vaporwave: "cooltint",
+  filmnoir: "blackwhite",
+  custom: "warmglow",
+};
+
 export async function applyStyle(imageBuffer, style, customPrompt = "") {
   console.log(`StyleEngine: Processing request for style [${style}]`);
 
@@ -160,51 +140,17 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
     return await applyLocalFilter(imageBuffer, style);
   }
 
-  // 2. Check Pro Hugging Face styles
-  if (HF_MAPPING[style]) {
-    if (!process.env.HF_TOKEN) {
-      console.warn("HF_TOKEN missing. Falling back to local High Contrast filter.");
-      return await applyLocalFilter(imageBuffer, "highcontrast");
-    }
-
-    const config = HF_MAPPING[style];
-    try {
-      // Resize image down slightly to ensure safe speed & payloads under free tier
-      const processingBuffer = await sharp(imageBuffer)
-        .resize(512, 512, { fit: "inside" })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-
-      const blob = new Blob([processingBuffer], { type: "image/jpeg" });
-      const response = await hf.imageToImage({
-        model: config.model,
-        inputs: blob,
-        parameters: {
-          prompt: config.prompt,
-          negative_prompt: "deformed, blurry, low resolution, bad hands, dark shadows, dull, ugly",
-          strength: 0.6,
-          guidance_scale: 7.5,
-        },
-      });
-
-      const resArray = await response.arrayBuffer();
-      return Buffer.from(resArray);
-    } catch (err) {
-      console.error(`Hugging Face styling failed for [${style}], falling back to local Sepia filter:`, err.message);
-      return await applyLocalFilter(imageBuffer, "sepia");
-    }
-  }
-
-  // 3. Check Premium Fal.ai styles
-  if (FAL_MAPPING[style] || style === "custom") {
+  // 2. Process all AI styles through premium Fal.ai pipeline
+  if (AI_MAPPING[style] || style === "custom") {
+    // If FAL_KEY is missing in production, fall back to matching local filters dynamically
     if (!process.env.FAL_KEY) {
-      console.warn("FAL_KEY missing. Falling back to local Warm Glow filter.");
-      return await applyLocalFilter(imageBuffer, "warmglow");
+      const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
+      console.warn(`FAL_KEY missing in environment. Falling back to local filter [${fallbackFilter}] for style [${style}].`);
+      return await applyLocalFilter(imageBuffer, fallbackFilter);
     }
 
-    const basePrompt = style === "custom" ? customPrompt : FAL_MAPPING[style];
+    const basePrompt = style === "custom" ? customPrompt : AI_MAPPING[style];
     try {
-      // Convert buffer to data URI for Fal.ai image-to-image input
       const resizedBuffer = await sharp(imageBuffer)
         .resize(1024, 600, { fit: "cover" })
         .jpeg({ quality: 90 })
@@ -215,8 +161,8 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       const response = await fal.run("fal-ai/flux/schnell/image-to-image", {
         input: {
           image_url: base64Uri,
-          prompt: `${basePrompt}, artistic masterpiece, highly detailed, stunning visual style`,
-          strength: 0.5,
+          prompt: `${basePrompt}, gorgeous artistic masterpiece, highly detailed, stunning visual style`,
+          strength: 0.55,
           num_inference_steps: 4,
           enable_safety_checker: true,
           sync_mode: true,
@@ -227,16 +173,15 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
         throw new Error("Fal.ai returned invalid image structure");
       }
 
-      // Fetch the generated image url
       const fetchResponse = await fetch(response.image.url);
       const arrayBuffer = await fetchResponse.arrayBuffer();
       return Buffer.from(arrayBuffer);
     } catch (err) {
-      console.error(`Fal.ai styling failed for [${style}], falling back to local Vignette filter:`, err.message);
-      return await applyLocalFilter(imageBuffer, "vignette");
+      console.error(`Fal.ai styling failed for [${style}]. Falling back to matching local filter.`, err.message);
+      const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
+      return await applyLocalFilter(imageBuffer, fallbackFilter);
     }
   }
 
-  // Fallback if styling name is unrecognizable
   return imageBuffer;
 }
