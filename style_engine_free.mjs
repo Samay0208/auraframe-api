@@ -176,6 +176,12 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
       return Buffer.from(resArray);
     } catch (err) {
       console.error(`Hugging Face styling failed for [${style}]. Falling back to matching local filter.`, err.message);
+      try {
+        const { recordStyleError } = await import("./backend_api.mjs");
+        recordStyleError(style, err.message, err.stack);
+      } catch (e) {
+        console.error("Failed to record style error:", e.message);
+      }
       const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
       return await applyLocalFilter(imageBuffer, fallbackFilter);
     }

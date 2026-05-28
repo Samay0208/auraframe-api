@@ -71,12 +71,35 @@ function uploadToCloudinary(buffer, folder, publicId) {
 }
 
 let latestError = null;
+let styleErrors = [];
+
+// Export a helper to record style errors from the style engine
+export function recordStyleError(style, errorMessage, stack) {
+  styleErrors.unshift({
+    style,
+    error: errorMessage,
+    stack,
+    timestamp: new Date().toISOString()
+  });
+  if (styleErrors.length > 20) {
+    styleErrors.pop();
+  }
+}
 
 app.get("/diagnostics/logs", (req, res) => {
+  const hfToken = process.env.HF_TOKEN || "";
   res.json({
     status: "AuraFrame Diagnostics active",
     timestamp: new Date().toISOString(),
-    latestError: latestError || "No server errors recorded yet."
+    hfTokenStatus: {
+      configured: hfToken.length > 0,
+      length: hfToken.length,
+      startsWithHf: hfToken.startsWith("hf_"),
+      isPlaceholder: hfToken === "hf_REPLACE_THIS" || hfToken === "REPLACE_THIS",
+      prefix: hfToken.length > 6 ? hfToken.substring(0, 8) + "..." : "none"
+    },
+    latestError: latestError || "No server errors recorded yet.",
+    styleErrors: styleErrors
   });
 });
 
