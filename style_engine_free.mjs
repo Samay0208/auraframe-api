@@ -1,10 +1,13 @@
 /**
- * AuraFrame Cloud Style Engine - High-Fidelity Unified AI Pipeline
- * Routes all 28 AI styles through the premium Fal.ai FLUX engine for instant, jaw-dropping art.
+ * AuraFrame Cloud Style Engine - 100% Free Unified AI Pipeline
+ * Routes all 28 Pro and Premium styles through the free Hugging Face Stable Diffusion v1.5 pipeline.
  */
 
 import sharp from "sharp";
-import { fal } from "@fal-ai/client";
+import { HfInference } from "@huggingface/inference";
+
+// Initialize Hugging Face Inference Client
+const hf = new HfInference(process.env.HF_TOKEN);
 
 // Free Instant Filters (Sharp implementation)
 async function applyLocalFilter(buffer, style) {
@@ -64,13 +67,13 @@ async function applyLocalFilter(buffer, style) {
   }
 }
 
-// Unified High-Fidelity AI prompts mapping (FLUX and SDXL optimized)
+// Unified High-Fidelity prompts optimized for RunwayML Stable Diffusion v1.5
 const AI_MAPPING = {
-  // Pro Styles (routed to Fal.ai for breathtaking results)
+  // Pro Styles (Free Hugging Face)
   sketch: "fine line pencil sketch, beautiful hand-drawn graphite line art, clean shading, textured paper background",
   charcoal: "textured charcoal sketch, fine art charcoal drawing, rich dark values, smudged shadows",
   ink: "elegant black ink illustration, crosshatching drawing style, graphic novel ink illustration",
-  watercolor: "fluid wet-on-wet watercolor painting, soft pigment washes, delicate color bleed effects",
+  watercolor: "fluid wet-on-wet watercolor painting, soft fluid pigment washes, delicate color bleed effects",
   oilpainting: "classical oil painting on canvas, visible thick impasto brushstrokes, rich colorful masterwork",
   impressionist: "vibrant impressionist painting, beautiful outdoor light reflections, loose quick brush strokes, Claude Monet style",
   vangogh: "Vincent Van Gogh oil painting, swirling starry night sky impasto, thick swirling yellow and blue brushstrokes",
@@ -78,28 +81,28 @@ const AI_MAPPING = {
   anime: "classic retro anime aesthetic, gorgeous hand-drawn animation keyframe, colorful animation art",
   popArt: "bold pop art silkscreen print, Andy Warhol style, high contrast, vibrant blocky primary colors",
   pixelArt: "high quality retro 16-bit pixel art, pixelated game screen background, clean gaming asset",
-  ukiyoe: "classic Japanese ukiyo-e woodblock print, Hokusai wave landscape aesthetic, flat colors and fine linework",
+  ukiyoe: "woodblock Japanese woodcut print in style of Hokusai, Hokusai wave aesthetic, fine ink outlines, flat solid color overlay",
   lowpoly: "low-poly 3D geometric mesh render, faceted papercraft shapes, minimal clean digital graphics",
   manga: "japanese manga page, black and white ink line drawing, clean screen tone shading, comic book panels",
 
-  // Premium Styles
-  ghibli: "Studio Ghibli aesthetic, hand-drawn anime keyframe, rich watercolor colors, nostalgic soft warm lighting",
+  // Premium Styles (Now free Hugging Face)
+  ghibli: "Studio Ghibli aesthetic, hand-drawn anime keyframe, rich watercolor colors, nostalgic soft warm lighting, Miyazaki style",
   acrylic: "modern abstract acrylic painting, thick textured brush strokes, vibrant canvas, contemporary art",
   cubism: "analytical cubism painting style, fractured geometric shapes, neutral color tones, Pablo Picasso aesthetic",
-  artnouveau: "art nouveau illustration, elegant flowing lines, organic floral frames, Alphonse Mucha styling",
-  renaissance: "renaissance master portrait, soft chiaroscuro lighting, rich dark undertones, Rembrandt paint style",
+  artnouveau: "art nouveau illustration, elegant flowing lines, decorative borders, Alphonse Mucha styling",
+  renaissance: "renaissance master portrait painting, soft chiaroscuro lighting, rich dark undertones, Rembrandt paint style",
   pastel: "dreamy soft pastel sketch, chalk dust texture, delicate gentle hues",
-  comicbook: "vintage pulp comic book print, saturated ink colors, retro halftone dot pattern",
+  comicbook: "vintage pulp comic book print, saturated ink colors, retro halftone dot pattern, Marvel style",
   storybook: "whimsical fantasy storybook illustration, soft warm magical glow, watercolor and ink",
-  cyberpunk: "futuristic cyberpunk city scene, reflections in rain puddles, vibrant purple and cyan neon glow",
-  darkfantasy: "grim dark fantasy oil painting, eerie moody atmosphere, heavy shadow details, dark fantasy novel",
+  cyberpunk: "futuristic cyberpunk city scene, reflections in rain puddles, vibrant purple and cyan neon glow, tech",
+  darkfantasy: "grim dark fantasy oil painting, eerie moody atmosphere, heavy shadow details, dark fantasy novel illustration",
   steampunk: "steampunk design, brass gears, steam exhausts, industrial Victorian copper machinery, sepia tint",
   vaporwave: "surreal 1980s vaporwave aesthetic, glowing pink grids, neon gridlines, retro digital glitch",
   filmnoir: "high contrast black and white film noir photography, dramatic hard shadows, venetian blind blinds shadow casting",
   custom: "gorgeous conceptual art painting",
 };
 
-// Fallback mapper if FAL_KEY is missing (maps to the most visually matching local filter)
+// Fallback mapper if HF_TOKEN is missing or fails (maps to the most visually matching local filter)
 const FALLBACK_MAP = {
   sketch: "blackwhite",
   charcoal: "blackwhite",
@@ -140,45 +143,41 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
     return await applyLocalFilter(imageBuffer, style);
   }
 
-  // 2. Process all AI styles through premium Fal.ai pipeline
+  // 2. Process all AI styles through 100% FREE Hugging Face Stable Diffusion pipeline
   if (AI_MAPPING[style] || style === "custom") {
-    // If FAL_KEY is missing in production, fall back to matching local filters dynamically
-    if (!process.env.FAL_KEY) {
+    // Fall back to matching local filters if HF_TOKEN is missing
+    if (!process.env.HF_TOKEN) {
       const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
-      console.warn(`FAL_KEY missing in environment. Falling back to local filter [${fallbackFilter}] for style [${style}].`);
+      console.warn(`HF_TOKEN missing in environment. Falling back to local filter [${fallbackFilter}] for style [${style}].`);
       return await applyLocalFilter(imageBuffer, fallbackFilter);
     }
 
     const basePrompt = style === "custom" ? customPrompt : AI_MAPPING[style];
     try {
-      const resizedBuffer = await sharp(imageBuffer)
-        .resize(1024, 600, { fit: "cover" })
-        .jpeg({ quality: 90 })
+      // Resize image to 512x512 for optimal Hugging Face processing speed & payload limit compliance
+      const processingBuffer = await sharp(imageBuffer)
+        .resize(512, 512, { fit: "inside" })
+        .jpeg({ quality: 80 })
         .toBuffer();
 
-      const base64Uri = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
-
-      const response = await fal.run("fal-ai/flux/schnell/image-to-image", {
-        input: {
-          image_url: base64Uri,
-          prompt: `${basePrompt}, gorgeous artistic masterpiece, highly detailed, stunning visual style`,
+      const blob = new Blob([processingBuffer], { type: "image/jpeg" });
+      const response = await hf.imageToImage({
+        model: "runwayml/stable-diffusion-v1-5",
+        inputs: blob,
+        parameters: {
+          prompt: `${basePrompt}, highly detailed artistic masterpiece, stunning visual style`,
+          negative_prompt: "deformed, blurry, low resolution, bad hands, dark shadows, dull, ugly",
           strength: 0.55,
-          num_inference_steps: 4,
-          enable_safety_checker: true,
-          sync_mode: true,
+          guidance_scale: 7.5,
         },
       });
 
-      if (!response.image || !response.image.url) {
-        throw new Error("Fal.ai returned invalid image structure");
-      }
-
-      const fetchResponse = await fetch(response.image.url);
-      const arrayBuffer = await fetchResponse.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      const resArray = await response.arrayBuffer();
+      return Buffer.from(resArray);
     } catch (err) {
-      console.error(`Fal.ai styling failed for [${style}].`, err.message);
-      throw err;
+      console.error(`Hugging Face styling failed for [${style}]. Falling back to matching local filter.`, err.message);
+      const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
+      return await applyLocalFilter(imageBuffer, fallbackFilter);
     }
   }
 
