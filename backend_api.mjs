@@ -70,7 +70,7 @@ function uploadToCloudinary(buffer, folder, publicId) {
   });
 }
 
-app.get("/", (req, res) => res.json({ status: "AuraFrame API running", version: "1.0.0" }));
+app.get("/", (req, res) => res.json({ status: "AuraFrame API running", version: "1.1.0" }));
 
 app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res) => {
   try {
