@@ -6,8 +6,9 @@
 import sharp from "sharp";
 import { HfInference } from "@huggingface/inference";
 
-// Initialize Hugging Face Inference Client
-const hf = new HfInference(process.env.HF_TOKEN);
+// Initialize Hugging Face Inference Client with a safety fallback to prevent startup throws
+const hfToken = process.env.HF_TOKEN && process.env.HF_TOKEN !== "hf_REPLACE_THIS" && process.env.HF_TOKEN !== "REPLACE_THIS" ? process.env.HF_TOKEN : "";
+const hf = new HfInference(hfToken || "dummy_token");
 
 // Global list to hold style engine errors in a circular-safe manner
 export const styleErrors = [];
@@ -148,10 +149,11 @@ export async function applyStyle(imageBuffer, style, customPrompt = "") {
 
   // 2. Process all AI styles through 100% FREE Hugging Face Stable Diffusion pipeline
   if (AI_MAPPING[style] || style === "custom") {
-    // Fall back to matching local filters if HF_TOKEN is missing
-    if (!process.env.HF_TOKEN) {
+    // Fall back to matching local filters if HF_TOKEN is missing or is a placeholder
+    const isTokenMissing = !process.env.HF_TOKEN || process.env.HF_TOKEN === "hf_REPLACE_THIS" || process.env.HF_TOKEN === "REPLACE_THIS";
+    if (isTokenMissing) {
       const fallbackFilter = FALLBACK_MAP[style] || "highcontrast";
-      console.warn(`HF_TOKEN missing in environment. Falling back to local filter [${fallbackFilter}] for style [${style}].`);
+      console.warn(`HF_TOKEN missing or placeholder in environment. Falling back to local filter [${fallbackFilter}] for style [${style}].`);
       return await applyLocalFilter(imageBuffer, fallbackFilter);
     }
 
