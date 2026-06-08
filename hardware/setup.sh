@@ -236,11 +236,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-Environment="DISPLAY=:0"
-Environment="SDL_FBDEV=/dev/fb0"
-Environment="SDL_VIDEODRIVER=fbcon"
 ExecStartPre=/bin/sleep 3
 ExecStart=/usr/bin/python3 ${INSTALL_DIR}/auraframe_service.py
+
 Restart=always
 RestartSec=5
 StandardOutput=journal
