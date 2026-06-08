@@ -28,26 +28,43 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const serviceAccountPath = path.join(__dirname, "serviceAccount.json");
 
+let firebaseInitSource = "none";
+let firebaseInitError = null;
 let adminApp;
+
 if (fs.existsSync(serviceAccountPath)) {
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
-  adminApp = admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-  console.log("Initialized Firebase Admin SDK via local serviceAccount.json");
+  try {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
+    adminApp = admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    firebaseInitSource = "local serviceAccount.json";
+  } catch (err) {
+    firebaseInitError = "local file parse error: " + err.message;
+    adminApp = admin.initializeApp();
+  }
 } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     adminApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-    console.log("Initialized Firebase Admin SDK via FIREBASE_SERVICE_ACCOUNT env var");
+    firebaseInitSource = "env FIREBASE_SERVICE_ACCOUNT";
   } catch (err) {
-    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", err.message);
-    adminApp = admin.initializeApp();
+    firebaseInitError = "env var parse error: " + err.message;
+    try {
+      adminApp = admin.initializeApp();
+    } catch (e) {
+      firebaseInitError += " (default fallback also failed: " + e.message + ")";
+    }
   }
 } else {
-  adminApp = admin.initializeApp();
+  try {
+    adminApp = admin.initializeApp();
+    firebaseInitSource = "default (no explicit credentials)";
+  } catch (err) {
+    firebaseInitError = "default init error: " + err.message;
+  }
 }
 
 const db = admin.firestore();
@@ -111,6 +128,12 @@ app.get("/diagnostics/logs", async (req, res) => {
   res.json({
     status: "AuraFrame Diagnostics active",
     timestamp: new Date().toISOString(),
+    firebaseInit: {
+      source: firebaseInitSource,
+      error: firebaseInitError,
+      envVarExists: process.env.FIREBASE_SERVICE_ACCOUNT ? true : false,
+      envVarLength: process.env.FIREBASE_SERVICE_ACCOUNT ? process.env.FIREBASE_SERVICE_ACCOUNT.length : 0
+    },
     hfTokenStatus: {
       configured: hfToken.length > 0,
       length: hfToken.length,
