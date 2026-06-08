@@ -250,10 +250,69 @@ app.get("/frames/:frameId/images", async (req, res) => {
     if (frameDoc.data().apiKey !== apiKey) return res.status(401).json({ error: "Invalid API key" });
     const data = frameDoc.data();
     const images = data?.images || [];
+    const activeImages = images.filter(img => img.active !== false);
     const slideshowEnabled = data?.slideshowEnabled !== false; // defaults to true
-    res.json({ images: images.slice(-50), slideshowEnabled });
+    res.json({ images: activeImages.slice(-50), slideshowEnabled });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// GET /frames/:frameId/all-images — Get all images (active & inactive) of a frame (requires user auth)
+app.get("/frames/:frameId/all-images", requireAuth, async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const frameDoc = await db.collection("frames").doc(frameId).get();
+    if (!frameDoc.exists) return res.status(404).json({ error: "Frame not found" });
+    if (frameDoc.data().ownerId !== req.user.uid) return res.status(403).json({ error: "Unauthorized" });
+    
+    const images = frameDoc.data()?.images || [];
+    res.json(images);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /frames/:frameId/images/:imageId/toggle — Toggle active state of an image in slideshow
+app.post("/frames/:frameId/images/:imageId/toggle", requireAuth, async (req, res) => {
+  try {
+    const { frameId, imageId } = req.params;
+    const { active } = req.body;
+    
+    const frameDoc = await db.collection("frames").doc(frameId).get();
+    if (!frameDoc.exists) return res.status(404).json({ error: "Frame not found" });
+    if (frameDoc.data().ownerId !== req.user.uid) return res.status(403).json({ error: "Unauthorized" });
+    
+    const images = frameDoc.data()?.images || [];
+    let updated = false;
+    const newImages = images.map(img => {
+      if (img.id === imageId) {
+        updated = true;
+        return { ...img, active: active !== false };
+      }
+      return img;
+    });
+    
+    if (!updated) return res.status(404).json({ error: "Image not found in frame queue" });
+    
+    await db.collection("frames").doc(frameId).update({ images: newImages });
+    res.json({ success: true, active: active !== false });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /frames/:frameId/images/:imageId — Delete an image from frame queue completely
+app.delete("/frames/:frameId/images/:imageId", requireAuth, async (req, res) => {
+  try {
+    const { frameId, imageId } = req.params;
+    
+    const frameDoc = await db.collection("frames").doc(frameId).get();
+    if (!frameDoc.exists) return res.status(404).json({ error: "Frame not found" });
+    if (frameDoc.data().ownerId !== req.user.uid) return res.status(403).json({ error: "Unauthorized" });
+    
+    const images = frameDoc.data()?.images || [];
+    const newImages = images.filter(img => img.id !== imageId);
+    
+    await db.collection("frames").doc(frameId).update({ images: newImages });
+    res.json({ success: true, message: "Image removed from frame queue" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 
 
 app.post("/frames/register", requireAuth, async (req, res) => {
