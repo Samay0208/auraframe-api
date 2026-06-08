@@ -505,6 +505,26 @@ app.get("/frames/:frameId/status", requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// DELETE /frames/:frameId — Delete a frame (unpair and remove)
+app.delete("/frames/:frameId", requireAuth, async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const doc = await db.collection("frames").doc(frameId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Frame not found" });
+    
+    const data = doc.data();
+    if (data.ownerId !== req.user.uid) {
+      return res.status(403).json({ error: "Unauthorized to delete this frame" });
+    }
+    
+    await db.collection("frames").doc(frameId).delete();
+    res.json({ success: true, message: "Frame successfully deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
