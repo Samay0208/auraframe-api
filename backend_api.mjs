@@ -20,12 +20,38 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// const require = createRequire(import.meta.url);
-//const serviceAccount = require("./serviceAccount.json");
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-admin.initializeApp();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const serviceAccountPath = path.join(__dirname, "serviceAccount.json");
+
+let adminApp;
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf-8"));
+  adminApp = admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log("Initialized Firebase Admin SDK via local serviceAccount.json");
+} else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    adminApp = admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log("Initialized Firebase Admin SDK via FIREBASE_SERVICE_ACCOUNT env var");
+  } catch (err) {
+    console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", err.message);
+    adminApp = admin.initializeApp();
+  }
+} else {
+  adminApp = admin.initializeApp();
+}
+
 const db = admin.firestore();
+
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
