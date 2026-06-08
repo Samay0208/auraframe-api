@@ -10,7 +10,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/auraframe"
-SERVICE_USER="pi"
+SERVICE_USER="${SUDO_USER:-pi}"
+
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
