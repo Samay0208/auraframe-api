@@ -19,13 +19,12 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Try to import pygame (may fail on dev machines)
 try:
-    os.environ["SDL_FBDEV"] = "/dev/fb0"
-    os.environ["SDL_VIDEODRIVER"] = os.environ.get("SDL_VIDEODRIVER", "fbcon")
     import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
     print("[Display] pygame not available — running in headless mode")
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
