@@ -150,14 +150,19 @@ app.get("/", (req, res) => res.json({ status: "AuraFrame API running", version: 
 
 app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res) => {
   try {
-    const { style = "original", frameId, caption } = req.body;
+    const { style = "original", frameId, caption, queue } = req.body;
     const userId  = req.user.uid;
     const imageId = uuidv4();
 
     if (!req.file) return res.status(400).json({ error: "No photo uploaded" });
 
     const resizedBuffer = await sharp(req.file.buffer)
-      .resize(1024, 600, { fit: "cover", position: "entropy" })
+      .resize({
+        width: 1280,
+        height: 1280,
+        fit: "inside",
+        withoutEnlargement: true
+      })
       .jpeg({ quality: 92 })
       .toBuffer();
 
@@ -176,6 +181,8 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
       }
     }
 
+    const shouldQueue = queue !== "false";
+
     const imageDoc = {
       id: imageId, userId, frameId, style,
       status: style === "original" ? "ready" : "processing",
@@ -186,9 +193,11 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     await db.collection("images").doc(imageId).set(imageDoc);
 
     if (style === "original") {
-      await addToFrameQueue(frameId, imageId, origUrl, caption);
+      if (shouldQueue) {
+        await addToFrameQueue(frameId, imageId, origUrl, caption);
+      }
     } else {
-      processStyleAsync(imageId, userId, frameId, resizedBuffer, style, caption)
+      processStyleAsync(imageId, userId, frameId, resizedBuffer, style, caption, shouldQueue)
         .catch(err => console.error(`[${imageId}] Style error:`, err));
     }
 
@@ -205,14 +214,14 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
   }
 });
 
-async function processStyleAsync(imageId, userId, frameId, imageBuffer, style, caption) {
+async function processStyleAsync(imageId, userId, frameId, imageBuffer, style, caption, shouldQueue = true) {
   try {
     const { applyStyle } = await import("./style_engine_free.mjs");
     console.log(`[${imageId}] Processing style: ${style}`);
     const styledBuffer = await applyStyle(imageBuffer, style);
     const styledUrl = await uploadToCloudinary(styledBuffer, `auraframe/users/${userId}/styled`, `${imageId}_${style}`);
     await db.collection("images").doc(imageId).update({ styledUrl, status: "ready" });
-    if (frameId) {
+    if (frameId && shouldQueue) {
       await addToFrameQueue(frameId, imageId, styledUrl, caption);
     }
     console.log(`[${imageId}] Done`);
@@ -239,6 +248,40 @@ app.get("/images/:imageId/status", requireAuth, async (req, res) => {
     const { status, styledUrl, origUrl } = doc.data();
     res.json({ status, url: styledUrl || origUrl });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /images/:imageId/send — Send a previously uploaded image to a frame
+app.post("/images/:imageId/send", requireAuth, async (req, res) => {
+  try {
+    const { imageId } = req.params;
+    const { frameId } = req.body;
+    
+    if (!frameId) return res.status(400).json({ error: "frameId is required" });
+    
+    const imgDoc = await db.collection("images").doc(imageId).get();
+    if (!imgDoc.exists) return res.status(404).json({ error: "Image not found" });
+    
+    const imgData = imgDoc.data();
+    if (imgData.userId !== req.user.uid) {
+      return res.status(403).json({ error: "Unauthorized access to image" });
+    }
+    
+    const frameDoc = await db.collection("frames").doc(frameId).get();
+    if (!frameDoc.exists) return res.status(404).json({ error: "Frame not found" });
+    
+    const frameData = frameDoc.data();
+    if (frameData.ownerId !== req.user.uid && !(frameData.collaborators || []).includes(req.user.uid)) {
+      return res.status(403).json({ error: "Unauthorized access to frame" });
+    }
+    
+    const url = imgData.styledUrl || imgData.origUrl;
+    if (!url) return res.status(400).json({ error: "Image URL not ready yet" });
+    
+    await addToFrameQueue(frameId, imageId, url, imgData.caption);
+    res.json({ success: true, message: "Image sent to frame" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/frames/:frameId/images", async (req, res) => {
