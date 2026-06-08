@@ -88,10 +88,10 @@ def start_hotspot():
             "nmcli", "connection", "modify", "AuraFrame-Hotspot",
             "802-11-wireless.band", "bg",
             "802-11-wireless.channel", "7",
-            "wifi-sec.key-mgmt", "none",
             "ipv4.addresses", f"{HOTSPOT_IP}/24",
             "ipv4.method", "shared"
         ], capture_output=True, timeout=10)
+
 
         # Start the connection
         result = subprocess.run([
