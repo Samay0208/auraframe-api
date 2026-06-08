@@ -296,6 +296,16 @@ class FrameDisplay:
 
             img_w, img_h = pil_img.size
 
+            # Draw caption overlay if present (apply to original image first)
+            if caption:
+                pil_img = self._render_caption(pil_img, caption)
+
+            # If portrait, rotate 90 degrees counter-clockwise so that it fits the landscape screen layout.
+            # When the user physically stands the frame vertically, it will appear upright.
+            if img_w < img_h:
+                pil_img = pil_img.rotate(90, expand=True)
+                img_w, img_h = pil_img.size
+
             # Calculate scale to fit within display while preserving aspect ratio
             scale_w = DISPLAY_WIDTH / img_w
             scale_h = DISPLAY_HEIGHT / img_h
@@ -307,9 +317,6 @@ class FrameDisplay:
             # Resize with high-quality resampling
             pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
 
-            # Draw caption overlay if present
-            if caption:
-                pil_img = self._render_caption(pil_img, caption)
 
             # Convert PIL image to pygame surface
             img_bytes = pil_img.tobytes()
@@ -413,6 +420,8 @@ class PhotoSync:
     def __init__(self):
         self.photos = []  # List of {"id": ..., "path": ..., "caption": ...}
         self.last_sync = 0
+        self.slideshow_enabled = True
+
 
     def sync(self):
         """Poll the cloud API for the frame's photo queue."""
@@ -482,11 +491,13 @@ class PhotoSync:
                         except OSError:
                             pass
 
+            self.slideshow_enabled = data.get("slideshowEnabled", True)
             self.last_sync = time.time()
-            print(f"[Sync] Complete. {len(self.photos)} photos in queue.")
+            print(f"[Sync] Complete. {len(self.photos)} photos in queue. Slideshow: {self.slideshow_enabled}")
 
         except Exception as e:
             print(f"[Sync] Network error: {e}")
+
             # Load from cache if offline
             if not self.photos:
                 self._load_from_cache()
@@ -557,6 +568,7 @@ def run_slideshow(display, sync):
     """Main slideshow loop — called from the service coordinator."""
     load_config()
     photo_index = 0
+    current_photo_id = None
     last_poll = 0
     last_heartbeat = 0
     heartbeat_interval = 120  # Every 2 minutes
@@ -588,28 +600,48 @@ def run_slideshow(display, sync):
 
         # Display photos
         if sync.photos:
-            if photo_index >= len(sync.photos):
-                photo_index = 0
+            if not getattr(sync, "slideshow_enabled", True):
+                # Show only the latest image
+                photo = sync.photos[-1]
+                if photo["id"] != current_photo_id:
+                    display.show_photo(
+                        photo["path"],
+                        caption=photo.get("caption"),
+                        crossfade=(current_photo_id is not None)
+                    )
+                    current_photo_id = photo["id"]
+                
+                # Wait and pump events periodically
+                wait_start = time.time()
+                while time.time() - wait_start < 2 and display.running:
+                    display._pump_events()
+                    time.sleep(0.2)
+            else:
+                if photo_index >= len(sync.photos):
+                    photo_index = 0
 
-            photo = sync.photos[photo_index]
-            display.show_photo(
-                photo["path"],
-                caption=photo.get("caption"),
-                crossfade=(photo_index > 0)
-            )
-            photo_index += 1
+                photo = sync.photos[photo_index]
+                display.show_photo(
+                    photo["path"],
+                    caption=photo.get("caption"),
+                    crossfade=(current_photo_id is not None)
+                )
+                current_photo_id = photo["id"]
+                photo_index += 1
 
-            # Wait for slide duration, pumping events periodically
-            wait_start = time.time()
-            while time.time() - wait_start < SLIDE_DURATION and display.running:
-                display._pump_events()
-                time.sleep(0.2)
+                # Wait for slide duration, pumping events periodically
+                wait_start = time.time()
+                while time.time() - wait_start < SLIDE_DURATION and display.running:
+                    display._pump_events()
+                    time.sleep(0.2)
         else:
             display.show_empty()
+            current_photo_id = None
             # Wait and retry
             wait_start = time.time()
             while time.time() - wait_start < 10 and display.running:
                 display._pump_events()
                 time.sleep(0.2)
+
 
     return "quit"

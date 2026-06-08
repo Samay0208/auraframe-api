@@ -248,10 +248,13 @@ app.get("/frames/:frameId/images", async (req, res) => {
     const frameDoc = await db.collection("frames").doc(frameId).get();
     if (!frameDoc.exists) return res.status(404).json({ error: "Frame not found" });
     if (frameDoc.data().apiKey !== apiKey) return res.status(401).json({ error: "Invalid API key" });
-    const images = frameDoc.data()?.images || [];
-    res.json({ images: images.slice(-50) });
+    const data = frameDoc.data();
+    const images = data?.images || [];
+    const slideshowEnabled = data?.slideshowEnabled !== false; // defaults to true
+    res.json({ images: images.slice(-50), slideshowEnabled });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 
 app.post("/frames/register", requireAuth, async (req, res) => {
   try {
@@ -501,9 +504,35 @@ app.get("/frames/:frameId/status", requireAuth, async (req, res) => {
       localIp: heartbeat.localIp || "",
       photoCount: heartbeat.photoCount || 0,
       uptime: heartbeat.uptime || 0,
+      slideshowEnabled: data.slideshowEnabled !== false,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// POST /frames/:frameId/settings — Update frame settings (slideshowEnabled)
+app.post("/frames/:frameId/settings", requireAuth, async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const { slideshowEnabled } = req.body;
+    
+    const doc = await db.collection("frames").doc(frameId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Frame not found" });
+    if (doc.data().ownerId !== req.user.uid) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+    
+    const updates = {};
+    if (slideshowEnabled !== undefined) {
+      updates.slideshowEnabled = !!slideshowEnabled;
+    }
+    
+    await db.collection("frames").doc(frameId).update(updates);
+    res.json({ success: true, settings: updates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // DELETE /frames/:frameId — Delete a frame (unpair and remove)
 app.delete("/frames/:frameId", requireAuth, async (req, res) => {
