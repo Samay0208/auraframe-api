@@ -277,6 +277,77 @@ app.post("/frames/register", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/frames/self-register", async (req, res) => {
+  try {
+    const { name } = req.body;
+    const frameId = uuidv4();
+    const apiKey  = uuidv4().replace(/-/g, "");
+    const pairingPin = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await db.collection("frames").doc(frameId).set({
+      id: frameId,
+      name: name || "My AuraFrame",
+      ownerId: null,
+      apiKey,
+      pairingPin,
+      images: [],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    res.json({ frameId, apiKey, pairingPin });
+  } catch (err) {
+    console.error("Frame self-registration error:", err);
+    latestError = {
+      route: "/frames/self-register",
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    };
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/frames/my", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const ownerSnap = await db.collection("frames").where("ownerId", "==", userId).get();
+    const collabSnap = await db.collection("frames").where("collaborators", "array-contains", userId).get();
+    
+    const framesMap = new Map();
+    ownerSnap.forEach(doc => {
+      framesMap.set(doc.id, { id: doc.id, ...doc.data() });
+    });
+    collabSnap.forEach(doc => {
+      framesMap.set(doc.id, { id: doc.id, ...doc.data() });
+    });
+    
+    const framesList = Array.from(framesMap.values());
+    res.json(framesList);
+  } catch (err) {
+    console.error("Error fetching my frames:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/frames/:frameId/pairing-status", async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const apiKey = req.headers.authorization?.split("Bearer ")[1];
+    if (!apiKey) return res.status(401).json({ error: "No API key provided" });
+
+    const doc = await db.collection("frames").doc(frameId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Frame not found" });
+    if (doc.data().apiKey !== apiKey) return res.status(401).json({ error: "Invalid API key" });
+    
+    const data = doc.data();
+    res.json({
+      paired: !!data.ownerId,
+      pairingPin: data.pairingPin || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/frames/pair-by-pin", requireAuth, async (req, res) => {
   try {
     const { pin } = req.body;
