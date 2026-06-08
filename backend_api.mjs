@@ -242,7 +242,16 @@ app.post("/frames/register", requireAuth, async (req, res) => {
       apiKey, pairingPin, images: [], createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     res.json({ frameId, apiKey, pairingPin });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error("Frame registration error:", err);
+    latestError = {
+      route: "/frames/register",
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    };
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/frames/pair-by-pin", requireAuth, async (req, res) => {
@@ -267,7 +276,16 @@ app.post("/frames/pair-by-pin", requireAuth, async (req, res) => {
     });
 
     res.json({ success: true, frameId, name: frameData.name || "My AuraFrame" });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error("Frame pairing error:", err);
+    latestError = {
+      route: "/frames/pair-by-pin",
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    };
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/frames/:frameId/invite", requireAuth, async (req, res) => {
