@@ -160,6 +160,88 @@ def enter_setup_mode():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Auto Registration and Pairing Check
+# ══════════════════════════════════════════════════════════════════════════════
+
+def self_register_frame():
+    """Register the frame automatically with the backend if config is empty."""
+    import requests
+    from wifi_portal import _update_env
+    
+    # Reload config first
+    load_config()
+    import frame_display
+    
+    if frame_display.FRAME_ID and frame_display.API_KEY:
+        return True
+        
+    print("[Service] No FRAME_ID or API_KEY found. Registering automatically...")
+    display.show_connecting("Registering frame...")
+    
+    url = f"{frame_display.API_BASE}/frames/self-register"
+    try:
+        res = requests.post(url, json={"name": frame_display.FRAME_NAME}, timeout=15)
+        if res.status_code == 200:
+            data = res.json()
+            new_fid = data["frameId"]
+            new_akey = data["apiKey"]
+            pairing_pin = data["pairingPin"]
+            
+            print(f"[Service] Registered successfully! ID: {new_fid}, PIN: {pairing_pin}")
+            
+            # Save to env
+            _update_env("FRAME_ID", new_fid)
+            _update_env("API_KEY", new_akey)
+            _update_env("PAIRING_PIN", pairing_pin)
+            
+            # Reload config
+            load_config()
+            return True
+        else:
+            print(f"[Service] Registration endpoint returned status {res.status_code}")
+            display.show_connecting("Registration failed...")
+            time.sleep(3)
+    except Exception as e:
+        print(f"[Service] Registration error: {e}")
+        display.show_connecting("Registration error...")
+        time.sleep(3)
+    return False
+
+
+def check_pairing_status():
+    """Poll API to check if the frame has been paired by an owner."""
+    import requests
+    # Reload config
+    load_config()
+    import frame_display
+    
+    fid = frame_display.FRAME_ID
+    akey = frame_display.API_KEY
+    abase = frame_display.API_BASE
+    
+    if not fid or not akey:
+        return False, None
+        
+    url = f"{abase}/frames/{fid}/pairing-status"
+    headers = {"Authorization": f"Bearer {akey}"}
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("paired", False), data.get("pairingPin")
+        elif res.status_code in (401, 404):
+            print(f"[Service] Credentials invalid ({res.status_code}). Clearing config.")
+            from wifi_portal import _update_env
+            _update_env("FRAME_ID", "")
+            _update_env("API_KEY", "")
+            _update_env("PAIRING_PIN", "")
+            load_config()
+    except Exception as e:
+        print(f"[Service] Error checking pairing status: {e}")
+    return False, None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main Service Loop
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -207,6 +289,61 @@ def main():
                 continue
             # After successful setup, reload config
             load_config()
+
+        # Check self-registration
+        import frame_display
+        if not frame_display.FRAME_ID or not frame_display.API_KEY:
+            if not self_register_frame():
+                print("[Service] Self-registration failed. Retrying setup loop...")
+                time.sleep(5)
+                continue
+
+        # Check pairing status
+        paired, pairing_pin = check_pairing_status()
+        if not paired:
+            print(f"[Service] Frame is not paired yet. Displaying PIN: {pairing_pin}")
+            # Try to get pairing pin from env/config if not returned
+            if not pairing_pin:
+                env_path = os.path.join(BASE_DIR, ".env")
+                if not os.path.exists(env_path):
+                    env_path = "/opt/auraframe/.env"
+                if os.path.exists(env_path):
+                    try:
+                        with open(env_path, "r") as f:
+                            for line in f:
+                                if "PAIRING_PIN=" in line:
+                                    pairing_pin = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    except Exception:
+                        pass
+            
+            if not pairing_pin:
+                pairing_pin = "------"
+                
+            display.show_pairing(pairing_pin)
+            
+            is_paired = False
+            last_poll = 0
+            poll_interval = 5
+            
+            while not is_paired and display.running:
+                display._pump_events()
+                now = time.time()
+                if now - last_poll >= poll_interval:
+                    if not is_wifi_connected():
+                        print("[Service] WiFi connection lost during pairing status check.")
+                        break
+                    
+                    p_status, _ = check_pairing_status()
+                    if p_status:
+                        is_paired = True
+                        display.show_connected(_wifi_ssid or "WiFi")
+                        time.sleep(4)
+                    last_poll = now
+                time.sleep(0.1)
+                
+            if not is_paired:
+                # Loop back to check WiFi or retry
+                continue
 
         # ── Connected — Run Slideshow ─────────────────────────────────────────
         print("[Service] WiFi connected. Starting slideshow...")

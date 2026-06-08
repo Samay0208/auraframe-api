@@ -237,6 +237,25 @@ class FrameDisplay:
         self._draw_centered_text("Pair using the PIN code shown in the app", 320, font_size=13, color=DIM_COLOR)
         self._flip()
 
+    def show_pairing(self, pin):
+        """Show PIN code and pairing instructions on the frame display."""
+        self.current_state = "pairing"
+        self._clear()
+        self._draw_logo(100)
+        self._draw_centered_text("AuraFrame", 150, font_size=28, color=TEXT_COLOR, bold=True)
+        self._draw_centered_text("Pair Frame with Mobile App", 210, font_size=20, color=GOLD_COLOR, bold=True)
+        self._draw_centered_text("Enter this PIN code in the AuraFrame app on your phone:", 250, font_size=14, color=DIM_COLOR)
+
+        # Draw pairing PIN
+        self._draw_centered_text(pin, 320, font_size=48, color=GOLD_COLOR, bold=True)
+
+        self._draw_centered_text("Waiting for connection...", 390, font_size=13, color=DIM_COLOR)
+
+        if self.screen:
+            pygame.draw.line(self.screen, BORDER_COLOR, (100, 420), (700, 420), 1)
+        self._draw_centered_text(f"Frame: {FRAME_NAME}", 448, font_size=12, color=DIM_COLOR)
+        self._flip()
+
     # ── Screen: No Photos ────────────────────────────────────────────────────
     def show_empty(self):
         """Show 'waiting for photos' screen."""

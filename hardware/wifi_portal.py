@@ -523,27 +523,33 @@ class PortalHandler(BaseHTTPRequestHandler):
 def _update_env(key, value):
     """Update a key in the .env file."""
     env_path = os.path.join(BASE_DIR, ".env")
-    # Also check /opt/auraframe/.env
-    if not os.path.exists(env_path):
-        env_path = "/opt/auraframe/.env"
-    if not os.path.exists(env_path):
-        return
+    # If /opt/auraframe/.env exists, use it
+    opt_path = "/opt/auraframe/.env"
+    if os.path.exists(opt_path):
+        env_path = opt_path
 
     lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+
     found = False
-    with open(env_path, "r") as f:
-        for line in f:
-            if line.strip().startswith(f"{key}="):
-                lines.append(f"{key}={value}\n")
-                found = True
-            else:
-                lines.append(line)
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f"{key}="):
+            lines[i] = f"{key}={value}\n"
+            found = True
+            break
     if not found:
         lines.append(f"{key}={value}\n")
 
-    with open(env_path, "w") as f:
-        f.writelines(lines)
-    print(f"[Config] Updated {key} in .env")
+    # Ensure parent directory exists (especially for /opt/auraframe)
+    try:
+        os.makedirs(os.path.dirname(env_path), exist_ok=True)
+        with open(env_path, "w") as f:
+            f.writelines(lines)
+        print(f"[Config] Updated {key} in .env ({env_path})")
+    except Exception as e:
+        print(f"[Config] Error writing .env at {env_path}: {e}")
 
 
 # ── Portal Server ─────────────────────────────────────────────────────────────
