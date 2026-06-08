@@ -72,37 +72,35 @@ def start_hotspot():
         pass
 
     try:
-        # Create the hotspot
-        result = subprocess.run([
-            "nmcli", "device", "wifi", "hotspot",
+        # Create a manual open AP connection
+        subprocess.run([
+            "nmcli", "connection", "add",
+            "type", "wifi",
             "ifname", "wlan0",
             "con-name", "AuraFrame-Hotspot",
+            "autoconnect", "no",
             "ssid", HOTSPOT_SSID,
-            "band", "bg",
-            "channel", "7"
-        ], capture_output=True, text=True, timeout=15)
+            "mode", "ap"
+        ], capture_output=True, timeout=10)
 
-        if result.returncode != 0:
-            print(f"[Hotspot] nmcli hotspot failed: {result.stderr}")
-            # Fallback: use hostapd directly
-            return start_hotspot_hostapd()
-
-        # Set static IP
+        # Configure as open hotspot with static IP
         subprocess.run([
             "nmcli", "connection", "modify", "AuraFrame-Hotspot",
+            "802-11-wireless.band", "bg",
+            "802-11-wireless.channel", "7",
+            "wifi-sec.key-mgmt", "none",
             "ipv4.addresses", f"{HOTSPOT_IP}/24",
             "ipv4.method", "shared"
         ], capture_output=True, timeout=10)
 
-        # Make the hotspot open (no password)
-        subprocess.run([
-            "nmcli", "connection", "modify", "AuraFrame-Hotspot",
-            "wifi-sec.key-mgmt", "none"
-        ], capture_output=True, timeout=10)
+        # Start the connection
+        result = subprocess.run([
+            "nmcli", "connection", "up", "AuraFrame-Hotspot"
+        ], capture_output=True, text=True, timeout=15)
 
-        # Reactivate with new settings
-        subprocess.run(["nmcli", "connection", "up", "AuraFrame-Hotspot"],
-                       capture_output=True, timeout=15)
+        if result.returncode != 0:
+            print(f"[Hotspot] nmcli hotspot start failed: {result.stderr}")
+            return start_hotspot_hostapd()
 
         print(f"[Hotspot] Access point active: {HOTSPOT_SSID} @ {HOTSPOT_IP}")
         return True
