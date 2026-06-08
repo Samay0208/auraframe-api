@@ -270,6 +270,104 @@ app.post("/invites/:code/accept", requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Frame Board Control — Commands, Heartbeat, Status
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /frames/:frameId/command — Send a command to the frame (from mobile app)
+app.post("/frames/:frameId/command", requireAuth, async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const { command, value } = req.body;
+
+    const validCommands = ["reset_wifi", "restart", "set_slideshow_speed"];
+    if (!validCommands.includes(command)) {
+      return res.status(400).json({ error: `Invalid command. Valid: ${validCommands.join(", ")}` });
+    }
+
+    await db.collection("frames").doc(frameId).set({
+      pendingCommand: {
+        command,
+        value: value || null,
+        issuedAt: admin.firestore.FieldValue.serverTimestamp(),
+        issuedBy: req.user.uid,
+      }
+    }, { merge: true });
+
+    res.json({ success: true, command, message: `Command '${command}' queued for frame.` });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /frames/:frameId/command — Frame polls for pending commands
+app.get("/frames/:frameId/command", async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const doc = await db.collection("frames").doc(frameId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Frame not found" });
+
+    const pending = doc.data().pendingCommand || null;
+    res.json({ command: pending?.command || null, value: pending?.value || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /frames/:frameId/command — Frame acknowledges/clears the command
+app.delete("/frames/:frameId/command", async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    await db.collection("frames").doc(frameId).update({
+      pendingCommand: admin.firestore.FieldValue.delete()
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /frames/:frameId/heartbeat — Frame reports its status
+app.post("/frames/:frameId/heartbeat", async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const { status, photoCount, wifiSsid, localIp, uptime } = req.body;
+
+    await db.collection("frames").doc(frameId).set({
+      heartbeat: {
+        status: status || "online",
+        photoCount: photoCount || 0,
+        wifiSsid: wifiSsid || "",
+        localIp: localIp || "",
+        uptime: uptime || 0,
+        lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+      }
+    }, { merge: true });
+
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /frames/:frameId/status — Mobile app fetches frame status
+app.get("/frames/:frameId/status", requireAuth, async (req, res) => {
+  try {
+    const { frameId } = req.params;
+    const doc = await db.collection("frames").doc(frameId).get();
+    if (!doc.exists) return res.status(404).json({ error: "Frame not found" });
+
+    const data = doc.data();
+    const heartbeat = data.heartbeat || {};
+    const lastSeen = heartbeat.lastSeen?.toDate?.() || null;
+    const isOnline = lastSeen && (Date.now() - lastSeen.getTime() < 5 * 60 * 1000); // 5 min threshold
+
+    res.json({
+      frameId,
+      name: data.name || "My AuraFrame",
+      isOnline,
+      lastSeen: lastSeen?.toISOString() || null,
+      wifiSsid: heartbeat.wifiSsid || "",
+      localIp: heartbeat.localIp || "",
+      photoCount: heartbeat.photoCount || 0,
+      uptime: heartbeat.uptime || 0,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`AuraFrame API running on port ${PORT}`);
