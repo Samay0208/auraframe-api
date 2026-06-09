@@ -2,10 +2,10 @@
 """
 AuraFrame Display Engine
 Renders photos fullscreen on a 5-inch HDMI LCD (800x480) using pygame.
-Images are displayed preserving their original orientation:
-  - Portrait photos → displayed as portrait (pillarboxed with black bars on sides)
-  - Landscape photos → displayed as landscape (letterboxed if needed)
-  - Scaling always fits within the screen while maintaining aspect ratio.
+Dynamically switches display orientation to match each image:
+  - Portrait photos → OS display rotates to portrait (480×800), image fills screen
+  - Landscape photos → OS display stays/returns to landscape (800×480)
+  - Uses xrandr (X11) or wlr-randr (Wayland) for hardware display rotation
 Works on both Raspberry Pi 3B+ and Raspberry Pi 5.
 """
 
@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import json
+import subprocess
 import threading
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -102,6 +103,131 @@ class FrameDisplay:
         self.running = False
         self.current_state = "boot"  # boot, setup, connecting, empty, slideshow, error
         self._fonts = {}
+        self._orientation = "landscape"  # "landscape" or "portrait"
+        self._display_w = DISPLAY_WIDTH   # Current active display width
+        self._display_h = DISPLAY_HEIGHT  # Current active display height
+        self._hdmi_output = None  # Detected HDMI output name for xrandr
+        self._use_wlr = False     # True if using wlr-randr (Wayland)
+
+    def _detect_display_tool(self):
+        """Detect whether to use xrandr (X11) or wlr-randr (Wayland) and find the HDMI output name."""
+        # Try wlr-randr first (Raspberry Pi OS Bookworm+ uses Wayland)
+        try:
+            result = subprocess.run(
+                ["wlr-randr"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith(" ") and not line.startswith("\t"):
+                        name = line.split()[0]
+                        if "HDMI" in name.upper() or "DSI" in name.upper() or "DPI" in name.upper():
+                            self._hdmi_output = name
+                            self._use_wlr = True
+                            print(f"[Display] Using wlr-randr, output: {self._hdmi_output}")
+                            return
+                # If no HDMI found, use first output
+                first_line = result.stdout.splitlines()[0].strip()
+                if first_line:
+                    self._hdmi_output = first_line.split()[0]
+                    self._use_wlr = True
+                    print(f"[Display] Using wlr-randr, output: {self._hdmi_output}")
+                    return
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        # Fall back to xrandr (X11)
+        try:
+            env = os.environ.copy()
+            env.setdefault("DISPLAY", ":0")
+            result = subprocess.run(
+                ["xrandr", "--query"], capture_output=True, text=True, timeout=5, env=env
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    if " connected" in line:
+                        name = line.split()[0]
+                        self._hdmi_output = name
+                        self._use_wlr = False
+                        print(f"[Display] Using xrandr, output: {self._hdmi_output}")
+                        return
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        print("[Display] No display rotation tool found. Orientation switching disabled.")
+
+    def _rotate_os_display(self, orientation):
+        """
+        Rotate the OS-level display output.
+        orientation: 'landscape' → normal, 'portrait' → rotated 90° left
+        """
+        if not self._hdmi_output:
+            return False
+
+        try:
+            if self._use_wlr:
+                # wlr-randr: --transform 90 for portrait (90° CCW), normal for landscape
+                transform = "90" if orientation == "portrait" else "normal"
+                subprocess.run(
+                    ["wlr-randr", "--output", self._hdmi_output, "--transform", transform],
+                    capture_output=True, timeout=5
+                )
+            else:
+                # xrandr: --rotate left for portrait, --rotate normal for landscape
+                rotate = "left" if orientation == "portrait" else "normal"
+                env = os.environ.copy()
+                env.setdefault("DISPLAY", ":0")
+                subprocess.run(
+                    ["xrandr", "--output", self._hdmi_output, "--rotate", rotate],
+                    capture_output=True, timeout=5, env=env
+                )
+            print(f"[Display] OS display rotated to {orientation}")
+            return True
+        except Exception as e:
+            print(f"[Display] Failed to rotate OS display: {e}")
+            return False
+
+    def _switch_orientation(self, orientation):
+        """
+        Switch between landscape (800×480) and portrait (480×800) display modes.
+        Rotates the OS display and reinitializes the pygame surface.
+        """
+        if orientation == self._orientation:
+            return  # Already in the correct orientation
+
+        print(f"[Display] Switching orientation: {self._orientation} → {orientation}")
+
+        # Rotate the OS framebuffer
+        rotated = self._rotate_os_display(orientation)
+
+        # Update internal dimensions
+        if orientation == "portrait":
+            self._display_w = DISPLAY_HEIGHT  # 480
+            self._display_h = DISPLAY_WIDTH   # 800
+        else:
+            self._display_w = DISPLAY_WIDTH   # 800
+            self._display_h = DISPLAY_HEIGHT  # 480
+
+        self._orientation = orientation
+
+        # Reinitialize the pygame display surface with the new dimensions
+        if PYGAME_AVAILABLE and self.screen:
+            # Small delay to let the OS complete the rotation
+            if rotated:
+                time.sleep(0.3)
+
+            try:
+                self.screen = pygame.display.set_mode(
+                    (self._display_w, self._display_h),
+                    pygame.FULLSCREEN | pygame.NOFRAME
+                )
+            except Exception:
+                self.screen = pygame.display.set_mode(
+                    (self._display_w, self._display_h)
+                )
+
+            self._fonts.clear()  # Clear font cache, dimensions may affect centering
+            self._clear()
 
     def init(self):
         """Initialize pygame display."""
@@ -112,14 +238,23 @@ class FrameDisplay:
         pygame.init()
         pygame.mouse.set_visible(False)
 
+        # Detect display rotation tools
+        self._detect_display_tool()
+
+        # Ensure we start in landscape
+        self._rotate_os_display("landscape")
+        self._orientation = "landscape"
+        self._display_w = DISPLAY_WIDTH
+        self._display_h = DISPLAY_HEIGHT
+
         # Try to create fullscreen display
         try:
             self.screen = pygame.display.set_mode(
-                (DISPLAY_WIDTH, DISPLAY_HEIGHT),
+                (self._display_w, self._display_h),
                 pygame.FULLSCREEN | pygame.NOFRAME
             )
         except Exception:
-            self.screen = pygame.display.set_mode((DISPLAY_WIDTH, DISPLAY_HEIGHT))
+            self.screen = pygame.display.set_mode((self._display_w, self._display_h))
 
         pygame.display.set_caption("AuraFrame")
         self.running = True
@@ -147,7 +282,7 @@ class FrameDisplay:
             return
         font = self._get_font(font_size, bold)
         surface = font.render(text, True, color or TEXT_COLOR)
-        rect = surface.get_rect(center=(DISPLAY_WIDTH // 2, y))
+        rect = surface.get_rect(center=(self._display_w // 2, y))
         self.screen.blit(surface, rect)
 
     def _draw_logo(self, y_center=120):
@@ -157,7 +292,7 @@ class FrameDisplay:
         # Gold square
         logo_size = 64
         logo_rect = pygame.Rect(0, 0, logo_size, logo_size)
-        logo_rect.center = (DISPLAY_WIDTH // 2, y_center)
+        logo_rect.center = (self._display_w // 2, y_center)
         pygame.draw.rect(self.screen, GOLD_COLOR, logo_rect, border_radius=16)
         # Letter A
         font = self._get_font(36, bold=True)
@@ -260,14 +395,16 @@ class FrameDisplay:
     def show_empty(self):
         """Show 'waiting for photos' screen."""
         self.current_state = "empty"
+        # Ensure landscape mode for UI screens
+        self._switch_orientation("landscape")
         self._clear()
         self._draw_logo(130)
         self._draw_centered_text(FRAME_NAME, 185, font_size=24, color=TEXT_COLOR, bold=True)
 
         # Decorative divider
         pygame.draw.line(self.screen, GOLD_COLOR,
-                         (DISPLAY_WIDTH // 2 - 40, 215),
-                         (DISPLAY_WIDTH // 2 + 40, 215), 2)
+                         (self._display_w // 2 - 40, 215),
+                         (self._display_w // 2 + 40, 215), 2)
 
         self._draw_centered_text("No photos yet", 250, font_size=18, color=DIM_COLOR)
         self._draw_centered_text("Open the AuraFrame app on your phone", 290, font_size=14, color=DIM_COLOR)
@@ -280,9 +417,10 @@ class FrameDisplay:
     # ── Screen: Display Photo ─────────────────────────────────────────────────
     def show_photo(self, image_path, caption=None, crossfade=True):
         """
-        Display a photo on screen, preserving its original orientation.
-        Portrait images are displayed as portrait (pillarboxed).
-        Landscape images are displayed as landscape (letterboxed if needed).
+        Display a photo on screen, matching the display orientation to the image.
+        Portrait images → display switches to portrait (480×800).
+        Landscape images → display stays/switches to landscape (800×480).
+        The image is then scaled to fill the screen as much as possible.
         """
         self.current_state = "slideshow"
         if not self.screen or not os.path.exists(image_path):
@@ -297,19 +435,19 @@ class FrameDisplay:
 
             img_w, img_h = pil_img.size
 
-            # Draw caption overlay if present (apply to original image first)
+            # Determine image orientation and switch display to match
+            is_portrait = img_h > img_w
+            target_orientation = "portrait" if is_portrait else "landscape"
+            self._switch_orientation(target_orientation)
+
+            # Draw caption overlay if present
             if caption:
                 pil_img = self._render_caption(pil_img, caption)
-
-            # If portrait, rotate 90 degrees counter-clockwise so that it fits the landscape screen layout.
-            # When the user physically stands the frame vertically, it will appear upright.
-            if img_w < img_h:
-                pil_img = pil_img.rotate(90, expand=True)
                 img_w, img_h = pil_img.size
 
-            # Calculate scale to fit within display while preserving aspect ratio
-            scale_w = DISPLAY_WIDTH / img_w
-            scale_h = DISPLAY_HEIGHT / img_h
+            # Calculate scale to fit within the current display dimensions
+            scale_w = self._display_w / img_w
+            scale_h = self._display_h / img_h
             scale = min(scale_w, scale_h)
 
             new_w = int(img_w * scale)
@@ -318,14 +456,13 @@ class FrameDisplay:
             # Resize with high-quality resampling
             pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
 
-
             # Convert PIL image to pygame surface
             img_bytes = pil_img.tobytes()
             py_surface = pygame.image.fromstring(img_bytes, (new_w, new_h), "RGB")
 
-            # Calculate centered position (pillarbox/letterbox)
-            x = (DISPLAY_WIDTH - new_w) // 2
-            y = (DISPLAY_HEIGHT - new_h) // 2
+            # Calculate centered position (minimal letterbox/pillarbox)
+            x = (self._display_w - new_w) // 2
+            y = (self._display_h - new_h) // 2
 
             # Crossfade effect
             if crossfade:
@@ -379,7 +516,7 @@ class FrameDisplay:
         """Smooth crossfade transition to a new image."""
         # Capture current screen
         old_screen = self.screen.copy()
-        new_screen = pygame.Surface((DISPLAY_WIDTH, DISPLAY_HEIGHT))
+        new_screen = pygame.Surface((self._display_w, self._display_h))
         new_screen.fill(BG_COLOR)
         new_screen.blit(new_surface, (x, y))
 
@@ -405,8 +542,11 @@ class FrameDisplay:
             pygame.display.flip()
 
     def quit(self):
-        """Clean shutdown."""
+        """Clean shutdown — restore landscape orientation."""
         self.running = False
+        # Restore landscape orientation on exit
+        if self._orientation != "landscape":
+            self._rotate_os_display("landscape")
         if PYGAME_AVAILABLE:
             pygame.quit()
 
