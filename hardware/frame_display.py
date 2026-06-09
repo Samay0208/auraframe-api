@@ -15,7 +15,7 @@ import time
 import json
 import threading
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # Try to import pygame (may fail on dev machines)
 try:
@@ -291,6 +291,7 @@ class FrameDisplay:
         try:
             # Load the image with Pillow for reliable format handling
             pil_img = Image.open(image_path)
+            pil_img = ImageOps.exif_transpose(pil_img)
             if pil_img.mode != "RGB":
                 pil_img = pil_img.convert("RGB")
 
