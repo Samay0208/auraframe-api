@@ -157,6 +157,7 @@ app.post("/images/upload", requireAuth, upload.single("photo"), async (req, res)
     if (!req.file) return res.status(400).json({ error: "No photo uploaded" });
 
     const resizedBuffer = await sharp(req.file.buffer)
+      .rotate()
       .resize({
         width: 1280,
         height: 1280,
